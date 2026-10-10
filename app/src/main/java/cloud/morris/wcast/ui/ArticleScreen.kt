@@ -5,9 +5,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -15,11 +17,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
@@ -34,8 +42,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -46,6 +55,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.ClickableText
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.launch
+import cloud.morris.wcast.ActivePosition
 import cloud.morris.wcast.MainViewModel
 import cloud.morris.wcast.SpeakingState
 import cloud.morris.wcast.UiState
@@ -58,6 +69,24 @@ fun ArticleScreen(viewModel: MainViewModel = viewModel()) {
     val query by viewModel.query.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val speakingState by viewModel.speakingState.collectAsStateWithLifecycle()
+    val activePosition by viewModel.activePosition.collectAsStateWithLifecycle()
+
+    // Survives across article loads; reset when a new article is opened below.
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+
+    val onJumpToCurrent: () -> Unit = jump@{
+        val state = uiState as? UiState.Article ?: return@jump
+        val index = indexFor(state.title, state.sections, activePosition) ?: return@jump
+        scope.launch { listState.animateScrollToItem(index) }
+    }
+
+    // Reset scroll when a different article is opened so a stale offset from the
+    // previous (possibly much longer/shorter) article is never kept.
+    val articleTitle = (uiState as? UiState.Article)?.title
+    LaunchedEffect(articleTitle) {
+        if (articleTitle != null) listState.scrollToItem(0)
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         SearchBar(
@@ -67,6 +96,7 @@ fun ArticleScreen(viewModel: MainViewModel = viewModel()) {
         )
         PlayerBar(
             speakingState = speakingState,
+            onJumpToCurrent = onJumpToCurrent,
             onPlayPause = viewModel::togglePause,
             onSkipBack = viewModel::skipBack,
             onSkipForward = viewModel::skipForward,
@@ -86,6 +116,8 @@ fun ArticleScreen(viewModel: MainViewModel = viewModel()) {
                     title = state.title,
                     sections = state.sections,
                     speakingState = speakingState,
+                    activePosition = activePosition,
+                    listState = listState,
                     onPlayWholeArticle = viewModel::playWholeArticle,
                     onPlaySection = viewModel::playSection,
                     onLinkClick = viewModel::openArticle
@@ -123,6 +155,7 @@ private fun SearchBar(
 @Composable
 private fun PlayerBar(
     speakingState: SpeakingState,
+    onJumpToCurrent: () -> Unit,
     onPlayPause: () -> Unit,
     onSkipBack: () -> Unit,
     onSkipForward: () -> Unit,
@@ -143,9 +176,18 @@ private fun PlayerBar(
             .height(48.dp)
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center
+        verticalAlignment = Alignment.CenterVertically
     ) {
+        // "Where am I?" control, pinned to the left edge so it reads as a
+        // separate concern from the transport cluster that follows.
+        IconButton(onClick = onJumpToCurrent, enabled = isActive) {
+            Icon(
+                imageVector = Icons.Filled.CenterFocusStrong,
+                contentDescription = "Jump to current reading position",
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+        Spacer(modifier = Modifier.weight(1f))
         IconButton(onClick = onSkipBack, enabled = isActive) {
             Icon(
                 imageVector = Icons.Filled.SkipPrevious,
@@ -265,73 +307,171 @@ private fun ArticleContent(
     title: String,
     sections: List<ArticleSection>,
     speakingState: SpeakingState,
+    activePosition: ActivePosition?,
+    listState: LazyListState,
     onPlayWholeArticle: () -> Unit,
     onPlaySection: (String) -> Unit,
     onLinkClick: (String) -> Unit
 ) {
+    val isTitleActive = activePosition?.sectionId == null
+
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                SelectionContainer(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold
-                    )
+        item(key = "title") {
+            ArticleRow(
+                isActive = isTitleActive,
+                content = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        SelectionContainer(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = title,
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        PlayStopButton(
+                            isSpeaking = speakingState == SpeakingState.WholeArticle,
+                            contentDescription = if (speakingState == SpeakingState.WholeArticle) {
+                                "Stop reading article"
+                            } else {
+                                "Read full article"
+                            },
+                            onClick = onPlayWholeArticle
+                        )
+                    }
                 }
-                PlayStopButton(
-                    isSpeaking = speakingState == SpeakingState.WholeArticle,
-                    contentDescription = if (speakingState == SpeakingState.WholeArticle) {
-                        "Stop reading article"
-                    } else {
-                        "Read full article"
-                    },
-                    onClick = onPlayWholeArticle
-                )
-            }
+            )
         }
         sections.forEach { section ->
-            item {
-                Column {
-                    section.heading?.let { heading ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            SelectionContainer(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = heading,
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold
+            section.heading?.let { heading ->
+                val headingActive =
+                    activePosition?.sectionId == section.id && activePosition.paragraphIndex == null
+                item(key = "${section.id}/heading") {
+                    ArticleRow(
+                        isActive = headingActive,
+                        content = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                SelectionContainer(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = heading,
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                PlayStopButton(
+                                    isSpeaking = speakingState == SpeakingState.Section(section.id),
+                                    contentDescription = if (speakingState == SpeakingState.Section(section.id)) {
+                                        "Stop reading section"
+                                    } else {
+                                        "Read section"
+                                    },
+                                    onClick = { onPlaySection(section.id) }
                                 )
                             }
-                            PlayStopButton(
-                                isSpeaking = speakingState == SpeakingState.Section(section.id),
-                                contentDescription = if (speakingState == SpeakingState.Section(section.id)) {
-                                    "Stop reading section"
-                                } else {
-                                    "Read section"
-                                },
-                                onClick = { onPlaySection(section.id) }
-                            )
                         }
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-                    section.paragraphs.forEach { paragraph ->
-                        SelectionContainer {
-                            ParagraphText(
-                                paragraph = paragraph,
-                                onLinkClick = onLinkClick
-                            )
+                    )
+                }
+            }
+            section.paragraphs.forEachIndexed { index, paragraph ->
+                val paragraphActive =
+                    activePosition?.sectionId == section.id && activePosition.paragraphIndex == index
+                item(key = "${section.id}/paragraph/$index") {
+                    ArticleRow(
+                        isActive = paragraphActive,
+                        content = {
+                            SelectionContainer {
+                                ParagraphText(
+                                    paragraph = paragraph,
+                                    onLinkClick = onLinkClick
+                                )
+                            }
                         }
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
+                    )
                 }
             }
         }
     }
 }
+
+/**
+ * Maps an [ActivePosition] to the flat item index used by the [LazyColumn] in
+ * [ArticleContent], or null when the position does not resolve to a row. The
+ * index layout is: row 0 = title, then for each section its heading (if any)
+ * followed by its paragraphs in order. Kept in lock-step with the rendering
+ * loop above so the "jump to current" control scrolls to the right place.
+ */
+internal fun indexFor(
+    title: String,
+    sections: List<ArticleSection>,
+    position: ActivePosition?
+): Int? {
+    val pos = position ?: return null
+
+    // Title row.
+    if (pos.sectionId == null) return 0
+
+    var index = 1 // account for the title row
+    for (section in sections) {
+        val isMatch = section.id == pos.sectionId
+        if (section.heading != null) {
+            if (isMatch && pos.paragraphIndex == null) return index
+            index++
+        }
+        if (isMatch && pos.paragraphIndex != null) {
+            return index + pos.paragraphIndex
+        }
+        index += section.paragraphs.size
+    }
+    return null
+}
+
+/**
+ * Wraps a list row in a left margin gutter that shows a blue vertical bar when
+ * [isActive], otherwise an equal-width blank gutter (preserving alignment).
+ */
+@Composable
+private fun ArticleRow(
+    isActive: Boolean,
+    content: @Composable () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min)
+    ) {
+        Box(
+            modifier = Modifier
+                .width(ActiveBarGutterWidth)
+                .fillMaxHeight()
+        ) {
+            MarginBar(isActive)
+        }
+        Box(modifier = Modifier.weight(1f)) {
+            content()
+        }
+    }
+}
+
+/** The vertical blue bar shown in the gutter beside the row being read. */
+@Composable
+private fun MarginBar(isActive: Boolean) {
+    if (isActive) {
+        Box(
+            modifier = Modifier
+                .width(ActiveBarWidth)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(ActiveBarWidth / 2))
+                .background(MaterialTheme.colorScheme.primary)
+        )
+    }
+}
+
+private val ActiveBarWidth = 4.dp
+private val ActiveBarGutterWidth = 14.dp
 
 @Composable
 private fun ParagraphText(

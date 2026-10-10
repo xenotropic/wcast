@@ -46,6 +46,20 @@ sealed interface SpeakingState {
         }
 }
 
+/**
+ * Pinpoints the exact chunk of an article currently being read aloud, so the UI
+ * can draw a left-margin indicator and scroll to it on demand.
+ *
+ * @property sectionId The id of the [ArticleSection] being read, or null while
+ *   the article title is spoken (it always comes first).
+ * @property paragraphIndex The index of the paragraph within its section, or
+ *   null while a section heading is spoken.
+ */
+data class ActivePosition(
+    val sectionId: String?,
+    val paragraphIndex: Int?
+)
+
 class MainViewModel : AndroidViewModel {
 
     private val repository: WikipediaRepository
@@ -69,12 +83,17 @@ class MainViewModel : AndroidViewModel {
     private val _speakingState = MutableStateFlow<SpeakingState>(SpeakingState.None)
     val speakingState: StateFlow<SpeakingState> = _speakingState.asStateFlow()
 
+    /** The exact position in the article currently being read (null when idle). */
+    private val _activePosition = MutableStateFlow<ActivePosition?>(null)
+    val activePosition: StateFlow<ActivePosition?> = _activePosition.asStateFlow()
+
     private var searchJob: Job? = null
 
     init {
-        // When a spoken stream finishes, clear the speaking state.
+        // When a spoken stream finishes, clear the speaking state and position.
         speechController.onStreamDone = {
             _speakingState.value = SpeakingState.None
+            _activePosition.value = null
         }
         // Track which section is actively being spoken so skips highlighting and
         // per-section affordances stay accurate during whole-article playback.
@@ -85,6 +104,7 @@ class MainViewModel : AndroidViewModel {
             } else {
                 SpeakingState.WholeArticle
             }
+            _activePosition.value = ActivePosition(sectionId, utterance.paragraphIndex)
         }
     }
 
@@ -178,6 +198,7 @@ class MainViewModel : AndroidViewModel {
     fun stopSpeaking() {
         speechController.stop()
         _speakingState.value = SpeakingState.None
+        _activePosition.value = null
     }
 
     /** Pauses the current playback in place (resume restarts the current chunk). */
@@ -193,6 +214,9 @@ class MainViewModel : AndroidViewModel {
             }
             else -> Unit
         }
+        // Pause is "stop-like" (resume restarts the current chunk), so the
+        // reading indicator disappears while paused, mirroring that behavior.
+        _activePosition.value = null
     }
 
     /** Resumes paused playback from the chunk that was current when paused. */
