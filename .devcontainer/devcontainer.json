@@ -1,0 +1,14 @@
+{
+  "name": "Wcast Android Sandbox",
+  "image": "mcr.microsoft.com/devcontainers/java:17-bullseye",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "saoudrizwan.claude-dev",
+        "fwcd.kotlin",
+        "mathiasfrohlich.Kotlin"
+      ]
+    }
+  },
+  "remoteUser": "vscode"
+}
