@@ -34,12 +34,19 @@ sealed interface SpeakingState {
     data class Section(val id: String) : SpeakingState
 }
 
-class MainViewModel @JvmOverloads constructor(
-    application: Application,
-    private val repository: WikipediaRepository = WikipediaRepository()
-) : AndroidViewModel(application) {
+class MainViewModel : AndroidViewModel {
 
-    private val speechController = SpeechController(application)
+    private val repository: WikipediaRepository
+
+    /** Constructor used by [androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory]. */
+    constructor(application: Application) : this(application, WikipediaRepository())
+
+    /** Constructor allowing a custom repository to be injected (e.g. in tests). */
+    constructor(application: Application, repository: WikipediaRepository) : super(application) {
+        this.repository = repository
+    }
+
+    private val speechController = SpeechController(getApplication<Application>())
 
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
