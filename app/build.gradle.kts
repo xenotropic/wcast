@@ -70,4 +70,7 @@ dependencies {
 
     // HTML parsing & DOM scrubbing
     implementation("org.jsoup:jsoup:1.17.2")
+
+    // JVM unit tests for the pure normalization logic
+    testImplementation("junit:junit:4.13.2")
 }

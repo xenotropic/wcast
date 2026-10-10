@@ -5,6 +5,8 @@ import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import cloud.morris.wcast.data.ArticleSection
+import cloud.morris.wcast.normalization.Normalizer
+import cloud.morris.wcast.normalization.loadNormalizationRules
 import java.util.Locale
 
 /**
@@ -18,6 +20,15 @@ import java.util.Locale
 class SpeechController(context: Context) : TextToSpeech.OnInitListener {
 
     private val engine: TextToSpeech = TextToSpeech(context.applicationContext, this)
+
+    /**
+     * Normalizes display text into spoken text (Phase 3). Loaded lazily from the
+     * bundled rule assets; only applied to the text we *speak*, never to what is
+     * shown on screen.
+     */
+    private val normalizer: Normalizer by lazy {
+        Normalizer(loadNormalizationRules(context.applicationContext))
+    }
 
     /**
      * Invoked exactly once when the last utterance of a spoken stream finishes
@@ -77,7 +88,12 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
     }
 
     private fun speak(texts: List<String>) {
-        val utterances = texts.filter { it.isNotBlank() }
+        // Phase 3: normalize display text into spoken text before synthesizing.
+        // The normalization is applied here so title, headings, and paragraphs
+        // all go through the same pipeline, while the UI still shows raw text.
+        val utterances = texts
+            .map { normalizer.normalize(it) }
+            .filter { it.isNotBlank() }
         if (!ready) {
             pendingText = utterances
             return

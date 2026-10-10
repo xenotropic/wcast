@@ -1,0 +1,52 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# Wcast TTS normalization regex rules.
+#
+# FORMAT (one rule per line, two or three TAB-separated columns):
+#
+#   <search pattern>	<replacement>	<flags>
+#
+#   • <search pattern>  A regular expression (Java/Kotlin flavor, UTF-8) to find.
+#   • <replacement>     The literal text that replaces each match. Reference captured
+#                       groups with $1..$9, e.g. "$1 to $2". Use plain text otherwise.
+#                       To DELETE a match entirely, leave this column EMPTY.
+#   • <flags>           Optional. Use "i" for case-insensitive. Leave empty (or omit
+#                       the whole column) for a case-sensitive match. Only "i" is
+#                       supported.
+#
+# RULES:
+#   • Lines whose first non-space character is '#' are comments and are ignored.
+#   • Blank lines are ignored.
+#   • Rules are applied IN ORDER, top to bottom; each rule sees the output of the
+#     rules above it. Put more specific patterns FIRST.
+#   • Use parentheses ( ... ) to capture a group, and $1..$9 in the replacement.
+#
+# WHAT NOT TO PUT HERE:
+#   • Anything already removed by the article's HTML scrubbing (citations, tables,
+#     infoboxes, references, etc.) — that happens before normalization.
+#   • Any transform that needs more than a single match/replace (spelling out an
+#     ordinal like "3rd" → "third", Roman numerals, unit/currency lookups) — that
+#     logic lives in the app's Kotlin code, not here.
+#
+# EXAMPLE RULE (safe to copy and adapt):
+#   Quarter\s+(\d+)	quarter number $1	i
+#
+# To add a new rule, append a new TAB-separated line using the format above.
+# No other context is required.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Number ranges first: "1914–1918", "5-10", "pages 12–15" read as "1914 to 1918".
+(\d+)\s*[–—-]\s*(\d+)	$1 to $2	
+
+# Em/en dashes denote a pause; read them as a short pause (comma). Note this
+# does NOT match a plain hyphen "-", which is usually part of a compound word
+# or handled by the number-range rule above.
+[—–]	, 	
+
+# Temperature: "°F" and "°C" expand to spoken words (before the bare "°" rule).
+°\s*F	 degrees fahrenheit	i
+°\s*C	 degrees celsius	i
+
+# Bare degree sign: "30°" -> "30 degrees".
+°	 degrees 	
+
+
