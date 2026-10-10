@@ -1,14 +1,17 @@
-# Wcast
-
-**Turn Wikipedia articles into clean, natural-sounding audio.**
-
-Wcast is an open-source Android app that lets you search Wikipedia, read a
-clutter-free version of any article, and have it read aloud — the whole article
-or a single section at a time — using the text-to-speech voice already on your
-phone.
-
-Made with Kotlin and Jetpack Compose. Coding by DeepSeek V4 Pro0813, with additional
-advice and planning from Gemini. The text normalization rules are based upon my experiments a few years ago in [wiki-tts](https://github.com/xenotropic/wiki-tts).
+<table border="0" style="border-collapse: collapse; border: none;">
+  <tr style="border: none;">
+    <td valign="top" style="border: none;">
+      <h1>wcast</h1>
+      <p><b>Listen to Wikipedia articles using the Android TTS service</b></p>
+      <p>Wcast is an open-source (MIT license) Android app that lets you search Wikipedia, read a clutter-free version of any article, and have it read aloud — the whole article or a single section at a time — using the Android text-to-speech service. That service can be either the default one that ships with your device, or can be replaced to use other TTS services that allow use of other models (e.g., <a href="https://github.com/maxwhipw/marmalade-tts-android">Marmalade-TTS</a>).</p>
+      <p>While there are other services that work on server-side creation of audio of Wikipedia articles such as <a heref="https://ttsreader.com/wiki/">WikiTTS</a> or <a href="https://wiki-tts.toolforge.org/"> Wikipedia's own experiments</a> (which do have the advantage of caching high quality model output for many users to share), this app seeks to do as much as possible within Android system, allowing the user to: (1) up-to-date revisions of articles and (2) giving the user the choice of what TTS voices to use, be that the default TTS engine that ships with their phone, or other local or cloud-based models, such as those available through Marmalade (and any other app that functions as a Android TTS service). 
+      <p>Made with Kotlin and Jetpack Compose. Coding by DeepSeek V4 Pro0813, with additional advice and planning from Gemini. The text normalization rules are based upon my experiments a few years ago in <a href="https://github.com/xenotropic/wiki-tts">wiki-tts</a>.</p>
+    </td>
+    <td valign="top" width="280" style="border: none;">
+      <img src="https://github.com/user-attachments/assets/b52d6168-b487-44d8-89b0-784ec9432dc3" width="260" alt="Wcast Screenshot" />
+    </td>
+  </tr>
+</table>
 
 ---
 
@@ -16,16 +19,15 @@ advice and planning from Gemini. The text normalization rules are based upon my 
 
 - **Search Wikipedia** straight from the app. Type a topic and Wcast finds the
   article, or shows you close matches to tap.
-- **A clean reading view.** Wcast strips out the cruft — infoboxes, citation
-  markers, tables, nav links, and edit controls — leaving just the readable
-  prose, section headings, and paragraphs.
+- **A clean reading view.** Wcast strips out infoboxes, citation
+  markers, tables, nav links, and edit controls in its view. 
 - **Listen to any article.** Tap **Play** next to the title to hear the whole
   article from start to finish, or tap **Play** next to a section to hear just
   that part.
-- **Natural-sounding speech.** Before anything is spoken, Wcast rewrites the
-  text so it reads correctly out loud — turning "Henry VIII" into "Henry the
+- **Natural-sounding speech.** Before anything is spoken, Wcast further rewrites the
+  text to help TTS engines read it aloud — turning "Henry VIII" into "Henry the
   eighth", "120 km/h" into "120 kilometers per hour", "$4 billion" into "four
-  billion dollars", and so on.
+  billion dollars", and so on. While there are other text normalization engines (NemoTTS, others built into various TTS models), this is just a very simple set of rules tuned to Wikipedia, things like scientific units and Roman numerals that can be done quickly by phone hardware on the fly. 
 
 ---
 
@@ -41,14 +43,9 @@ This means:
   Android's **Settings → System → Languages & input → Text-to-speech output**
   (usually "Google Speech Services") is what Wcast speaks with. Switch the
   engine or voice there, and Wcast's voice changes with it.
-- **No extra permissions beyond network access.** Wcast only requests the
+- **Only permission is network access.** Wcast only requests the
   `INTERNET` permission to fetch articles from Wikipedia. It talks to the TTS
   service you already have, so there's no audio permission to grant.
-- **The spoken text is normalized, not the text on screen.** Wikipedia is full
-  of typography that looks fine but reads badly aloud — Unicode dashes and
-  quotes, "3rd", "U.S.", "°F", fractions, roman numerals, and more. Wcast
-  rewrites only what it *speaks* through a multi-stage normalization pipeline,
-  while the article you read on screen is left exactly as written.
 
 ### Tuning the pronunciation
 
@@ -71,10 +68,10 @@ live in the Kotlin normalization code.
 ## Features at a glance
 
 - 🔎 Wikipedia search with exact-match + suggestions
-- 🧹 Cleaned article body (no infoboxes, references, or edit chrome)
+- 🧹 Cleaned article body (no infoboxes, references, etc.)
 - ▶️ Whole-article and per-section playback
 - 🗣️ Uses your device's built-in Android TTS engine
-- ✍️ Data-driven text normalization for natural pronunciation
+- ✍️ Simple text normalization for more straightforward pronunciation
 
 ---
 
