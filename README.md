@@ -7,7 +7,8 @@ clutter-free version of any article, and have it read aloud — the whole articl
 or a single section at a time — using the text-to-speech voice already on your
 phone.
 
-Built with Kotlin and Jetpack Compose.
+Made with Kotlin and Jetpack Compose. Coding by DeepSeek V4 Pro0813, with additional
+advice and planning from Gemini. The text normalization rules are based upon my experiments a few years ago in [wiki-tts](https://github.com/xenotropic/wiki-tts).
 
 ---
 
@@ -51,7 +52,7 @@ This means:
 
 ### Tuning the pronunciation
 
-The normalization rules live in plain, editable text files bundled with the app
+Most of the normalization rules (some are too complex and have to exist as procedural code) live in plain, editable text files bundled with the app
 (`app/src/main/assets/normalization/`):
 
 | File | Purpose |
