@@ -96,7 +96,7 @@ class WikipediaRepository {
     private fun structureSections(content: Element): List<ArticleSection> {
         val sections = mutableListOf<ArticleSection>()
         var heading: String? = null
-        var paragraphs = mutableListOf<String>()
+        var paragraphs = mutableListOf<ArticleParagraph>()
         var inAppendix = false
 
         fun flush() {
@@ -125,8 +125,8 @@ class WikipediaRepository {
                         flush()
                         heading = cleanText(child.text())
                     }
-                    "p" -> cleanText(child.text())?.let { paragraphs += it }
-                    "li" -> cleanText(child.text())?.let { paragraphs += "\u2022 $it" }
+                    "p" -> paragraph(child, bullet = null)?.let { paragraphs += it }
+                    "li" -> paragraph(child, bullet = "\u2022 ")?.let { paragraphs += it }
                 }
                 visit(child)
             }
@@ -135,6 +135,27 @@ class WikipediaRepository {
         visit(content)
         flush()
         return sections
+    }
+
+    /**
+     * Converts a `<p>` or `<li>` element into an [ArticleParagraph], preserving
+     * internal wiki links (with offsets) for display while keeping the plain
+     * text available for TTS.
+     */
+    private fun paragraph(element: Element, bullet: String?): ArticleParagraph? {
+        val rawText = element.text()
+        val cleaned = cleanText(rawText) ?: return null
+        // Offsets below are computed against the *cleaned* text. Recompose the
+        // display text including any list bullet so link offsets line up.
+        val fullText = bullet?.plus(cleaned) ?: cleaned
+        val links = LinkCapture.extractLinks(element, cleaned).map { link ->
+            if (bullet != null) {
+                link.copy(start = link.start + bullet.length, end = link.end + bullet.length)
+            } else {
+                link
+            }
+        }
+        return ArticleParagraph(text = fullText, links = links)
     }
 
     /**

@@ -26,12 +26,24 @@ sealed interface UiState {
 /**
  * Identifies which part of the article is currently being read aloud, or
  * [SpeakingState.None] when nothing is playing. Used to render Play/Stop
- * affordances next to the title and each section.
+ * affordances next to the title and each section, and to drive the player bar.
+ *
+ * [isActive] mirrors whether any speech is currently in flight (playing or
+ * paused) and conveniently distinguishes the title/lead (whose section id is
+ * unknown here) from "nothing is playing".
  */
 sealed interface SpeakingState {
     data object None : SpeakingState
     data object WholeArticle : SpeakingState
-    data class Section(val id: String) : SpeakingState
+    data object WholeArticlePaused : SpeakingState
+    data class Section(val id: String, val paused: Boolean = false) : SpeakingState
+
+    /** True when some speech is in flight (playing or paused), false when idle. */
+    val isActive: Boolean
+        get() = when (this) {
+            None -> false
+            else -> true
+        }
 }
 
 class MainViewModel : AndroidViewModel {
@@ -63,6 +75,16 @@ class MainViewModel : AndroidViewModel {
         // When a spoken stream finishes, clear the speaking state.
         speechController.onStreamDone = {
             _speakingState.value = SpeakingState.None
+        }
+        // Track which section is actively being spoken so skips highlighting and
+        // per-section affordances stay accurate during whole-article playback.
+        speechController.onUtteranceStarted = { _, utterance ->
+            val sectionId = utterance.sectionId
+            _speakingState.value = if (sectionId != null) {
+                SpeakingState.Section(sectionId)
+            } else {
+                SpeakingState.WholeArticle
+            }
         }
     }
 
@@ -105,6 +127,15 @@ class MainViewModel : AndroidViewModel {
         }
     }
 
+    /**
+     * Opens an article tapped via an internal wiki link. Behaves identically to
+     * [onSuggestionSelected]: the link target is loaded as if it had been
+     * searched for (flat replacement — no back stack).
+     */
+    fun openArticle(title: String) {
+        onSuggestionSelected(title)
+    }
+
     /** Reads the entire article from the title through the last section. */
     fun playWholeArticle() {
         val state = _uiState.value
@@ -112,6 +143,10 @@ class MainViewModel : AndroidViewModel {
 
         if (_speakingState.value == SpeakingState.WholeArticle) {
             stopSpeaking()
+            return
+        }
+        if (_speakingState.value == SpeakingState.WholeArticlePaused) {
+            resumeSpeaking()
             return
         }
         stopSpeaking()
@@ -125,8 +160,13 @@ class MainViewModel : AndroidViewModel {
         if (state !is UiState.Article) return
         val section = state.sections.firstOrNull { it.id == id } ?: return
 
-        if (_speakingState.value == SpeakingState.Section(id)) {
+        val current = _speakingState.value
+        if (current == SpeakingState.Section(id)) {
             stopSpeaking()
+            return
+        }
+        if (current == SpeakingState.Section(id, paused = true)) {
+            resumeSpeaking()
             return
         }
         stopSpeaking()
@@ -138,6 +178,81 @@ class MainViewModel : AndroidViewModel {
     fun stopSpeaking() {
         speechController.stop()
         _speakingState.value = SpeakingState.None
+    }
+
+    /** Pauses the current playback in place (resume restarts the current chunk). */
+    fun pauseSpeaking() {
+        when (val current = _speakingState.value) {
+            is SpeakingState.Section -> {
+                speechController.pause()
+                _speakingState.value = SpeakingState.Section(current.id, paused = true)
+            }
+            SpeakingState.WholeArticle -> {
+                speechController.pause()
+                _speakingState.value = SpeakingState.WholeArticlePaused
+            }
+            else -> Unit
+        }
+    }
+
+    /** Resumes paused playback from the chunk that was current when paused. */
+    fun resumeSpeaking() {
+        when (val current = _speakingState.value) {
+            is SpeakingState.Section -> {
+                speechController.resume()
+                _speakingState.value = SpeakingState.Section(current.id, paused = false)
+            }
+            SpeakingState.WholeArticlePaused -> {
+                speechController.resume()
+                _speakingState.value = SpeakingState.WholeArticle
+            }
+            else -> Unit
+        }
+    }
+
+    /** Toggles between paused and playing for the current stream. */
+    fun togglePause() {
+        when (val current = _speakingState.value) {
+            is SpeakingState.Section -> if (current.paused) resumeSpeaking() else pauseSpeaking()
+            SpeakingState.WholeArticle -> pauseSpeaking()
+            SpeakingState.WholeArticlePaused -> resumeSpeaking()
+            SpeakingState.None -> Unit
+        }
+    }
+
+    /** Skips to the start of the next section relative to what's playing. */
+    fun skipForward() = skipRelative(delta = 1)
+
+    /** Skips to the start of the previous section relative to what's playing. */
+    fun skipBack() = skipRelative(delta = -1)
+
+    /**
+     * Advances by [delta] sections (+1 forward, -1 back). Behaves the same in
+     * both playback modes:
+     *   - Whole-article: jumps within the already-queued article ([SpeechController.skipSections]).
+     *   - Single section: stops the current section and starts the neighbouring
+     *     section in the article, reusing the proven [playSection] path.
+     * No-ops at either boundary or when idle.
+     */
+    private fun skipRelative(delta: Int) {
+        when (val current = _speakingState.value) {
+            SpeakingState.WholeArticle,
+            SpeakingState.WholeArticlePaused -> speechController.skipSections(delta)
+
+            is SpeakingState.Section -> {
+                val state = _uiState.value
+                if (state !is UiState.Article) return
+                val index = state.sections.indexOfFirst { it.id == current.id }
+                if (index < 0) return
+                val target = state.sections.getOrNull(index + delta) ?: return
+                // Reuse playSection so the single-section playback path (stop +
+                // speakSection + state) is identical to tapping the neighbour's
+                // play button — the behavior the skip buttons are meant to mirror.
+                playSection(target.id)
+            }
+
+            SpeakingState.None -> Unit
+        }
     }
 
     private suspend fun loadArticle(title: String) {

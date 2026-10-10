@@ -1,5 +1,6 @@
 package cloud.morris.wcast.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,14 +13,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -32,14 +37,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.text.ClickableText
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cloud.morris.wcast.MainViewModel
 import cloud.morris.wcast.SpeakingState
 import cloud.morris.wcast.UiState
+import cloud.morris.wcast.data.ArticleParagraph
 import cloud.morris.wcast.data.ArticleSection
 import cloud.morris.wcast.data.SearchSuggestion
 
@@ -54,6 +64,13 @@ fun ArticleScreen(viewModel: MainViewModel = viewModel()) {
             query = query,
             onQueryChange = viewModel::onQueryChanged,
             onSearch = viewModel::onSearch
+        )
+        PlayerBar(
+            speakingState = speakingState,
+            onPlayPause = viewModel::togglePause,
+            onSkipBack = viewModel::skipBack,
+            onSkipForward = viewModel::skipForward,
+            onStop = viewModel::stopSpeaking
         )
         HorizontalDivider()
         Box(
@@ -70,7 +87,8 @@ fun ArticleScreen(viewModel: MainViewModel = viewModel()) {
                     sections = state.sections,
                     speakingState = speakingState,
                     onPlayWholeArticle = viewModel::playWholeArticle,
-                    onPlaySection = viewModel::playSection
+                    onPlaySection = viewModel::playSection,
+                    onLinkClick = viewModel::openArticle
                 )
                 is UiState.Error -> ErrorMessage(state.message)
             }
@@ -100,6 +118,63 @@ private fun SearchBar(
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         keyboardActions = KeyboardActions(onSearch = { onSearch() })
     )
+}
+
+@Composable
+private fun PlayerBar(
+    speakingState: SpeakingState,
+    onPlayPause: () -> Unit,
+    onSkipBack: () -> Unit,
+    onSkipForward: () -> Unit,
+    onStop: () -> Unit
+) {
+    val isActive = speakingState.isActive
+    val isPaused = when (speakingState) {
+        is SpeakingState.Section -> speakingState.paused
+        SpeakingState.WholeArticlePaused -> true
+        else -> false
+    }
+
+    // The bar is always visible (fixed height) so the page never reflows; when
+    // nothing is playing the controls are simply disabled.
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        IconButton(onClick = onSkipBack, enabled = isActive) {
+            Icon(
+                imageVector = Icons.Filled.SkipPrevious,
+                contentDescription = "Previous section",
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+        IconButton(onClick = onPlayPause, enabled = isActive) {
+            Icon(
+                imageVector = if (isActive && !isPaused) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                contentDescription = if (isActive && !isPaused) "Pause" else "Play",
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+        IconButton(onClick = onSkipForward, enabled = isActive) {
+            Icon(
+                imageVector = Icons.Filled.SkipNext,
+                contentDescription = "Next section",
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+        IconButton(onClick = onStop, enabled = isActive) {
+            Icon(
+                imageVector = Icons.Filled.Stop,
+                contentDescription = "Stop",
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+    }
 }
 
 @Composable
@@ -191,7 +266,8 @@ private fun ArticleContent(
     sections: List<ArticleSection>,
     speakingState: SpeakingState,
     onPlayWholeArticle: () -> Unit,
-    onPlaySection: (String) -> Unit
+    onPlaySection: (String) -> Unit,
+    onLinkClick: (String) -> Unit
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -244,9 +320,9 @@ private fun ArticleContent(
                     }
                     section.paragraphs.forEach { paragraph ->
                         SelectionContainer {
-                            Text(
-                                text = paragraph,
-                                style = MaterialTheme.typography.bodyLarge
+                            ParagraphText(
+                                paragraph = paragraph,
+                                onLinkClick = onLinkClick
                             )
                         }
                         Spacer(modifier = Modifier.height(8.dp))
@@ -255,6 +331,53 @@ private fun ArticleContent(
             }
         }
     }
+}
+
+@Composable
+private fun ParagraphText(
+    paragraph: ArticleParagraph,
+    onLinkClick: (String) -> Unit
+) {
+    if (paragraph.links.isEmpty()) {
+        Text(
+            text = paragraph.text,
+            style = MaterialTheme.typography.bodyLarge
+        )
+        return
+    }
+
+    val annotated = buildAnnotatedString {
+        append(paragraph.text)
+        paragraph.links.forEach { link ->
+            if (link.start in 0..paragraph.text.length && link.end in 0..paragraph.text.length && link.start < link.end) {
+                addStyle(
+                    style = SpanStyle(
+                        color = MaterialTheme.colorScheme.primary,
+                        textDecoration = TextDecoration.Underline
+                    ),
+                    start = link.start,
+                    end = link.end
+                )
+                addStringAnnotation(
+                    tag = "LINK",
+                    annotation = link.title,
+                    start = link.start,
+                    end = link.end
+                )
+            }
+        }
+    }
+
+    ClickableText(
+        text = annotated,
+        style = MaterialTheme.typography.bodyLarge,
+        onClick = { offset ->
+            annotated.getStringAnnotations("LINK", offset, offset)
+                .firstOrNull()
+                ?.item
+                ?.let(onLinkClick)
+        }
+    )
 }
 
 @Composable

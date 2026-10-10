@@ -21,7 +21,7 @@ local.properties
 .vscode/
 .DS_Store
 Thumbs.db
-
+.clinerules
 # ─── Signing keys & secrets ────────────────────────────────────────────────────
 *.jks
 *.keystore
