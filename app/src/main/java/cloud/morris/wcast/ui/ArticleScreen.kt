@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
@@ -199,12 +200,13 @@ private fun ArticleContent(
     ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f)
-                )
+                SelectionContainer(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
                 PlayStopButton(
                     isSpeaking = speakingState == SpeakingState.WholeArticle,
                     contentDescription = if (speakingState == SpeakingState.WholeArticle) {
@@ -221,12 +223,13 @@ private fun ArticleContent(
                 Column {
                     section.heading?.let { heading ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = heading,
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.weight(1f)
-                            )
+                            SelectionContainer(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = heading,
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                             PlayStopButton(
                                 isSpeaking = speakingState == SpeakingState.Section(section.id),
                                 contentDescription = if (speakingState == SpeakingState.Section(section.id)) {
@@ -240,10 +243,12 @@ private fun ArticleContent(
                         Spacer(modifier = Modifier.height(8.dp))
                     }
                     section.paragraphs.forEach { paragraph ->
-                        Text(
-                            text = paragraph,
-                            style = MaterialTheme.typography.bodyLarge
-                        )
+                        SelectionContainer {
+                            Text(
+                                text = paragraph,
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        }
                         Spacer(modifier = Modifier.height(8.dp))
                     }
                 }
