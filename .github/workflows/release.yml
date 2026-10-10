@@ -1,0 +1,56 @@
+# Build a debug APK and publish it as a GitHub Release.
+#
+# This workflow runs ONLY when a version tag (v*) is pushed. Ordinary commits
+# and pull requests do NOT trigger a remote build — everything else is built
+# locally for testing. See AGENTS.md for the project's git/CI conventions.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Prevent concurrent runs for the same ref.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run unit tests
+        run: ./gradlew test
+
+      - name: Build debug APK
+        # Strip the leading "v" from the tag (e.g. "v0.1" -> "0.1") in the
+        # shell, then pass it to Gradle as a project property.
+        run: ./gradlew assembleDebug -PversionName="${GITHUB_REF_NAME#v}"
+
+      - name: Locate APK
+        id: apk
+        run: |
+          apk=$(ls app/build/outputs/apk/debug/*.apk | head -n 1)
+          echo "apk=$apk" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: ${{ steps.apk.outputs.apk }}
