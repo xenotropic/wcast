@@ -1,0 +1,19 @@
+==Original Issue==
+Right now, the player controls only provide granularity to start at a section heading, but it does seem like there is a pretty easy power already in there to start at a paragraph because you're able to resume at a paragraph with the stop start button. Can we make it so that if the user double taps on a particular paragraph that playback starts there? Have that playback follow the continuity setting that is set in ticket 12. So you probably want to implement 12 first before this one.
+
+==Status Report: 2026-10-11 12:43 PDT==
+IMPLEMENTED & CLOSED. Double-tapping a paragraph now starts reading from that
+paragraph, honoring the ticket-12 continuity setting.
+
+How: a `detectTapGestures(onDoubleTap = ...)` on each paragraph (single taps and
+drag-to-select still work, and link taps are unaffected) invokes a new
+`MainViewModel.playParagraph(sectionId, paragraphIndex)` -> new
+`SpeechController.speakFromParagraph(...)`, which queues the section's paragraphs
+from the tapped index onward (skipping the heading). When continuity is ON it
+appends the following sections through the end of the article; OFF stops at the
+end of that section.
+
+Files: `SpeechController.kt` (speakFromParagraph), `MainViewModel.kt`
+(playParagraph), `ArticleScreen.kt` (double-tap + onPlayParagraph chain).
+
+Verified: `./gradlew assembleDebug` and `testDebugUnitTest` pass.

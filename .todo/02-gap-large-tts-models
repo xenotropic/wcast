@@ -1,0 +1,105 @@
+==Original Issue==
+Larger TTS models (Whether cloud-based or local, "large" relative to the phone) tend to have a large delay at the beginning of each paragraph. Certainly for the first paragraph, this is unavoidable, but for subsequent paragraphs, in order to prevent that gap, I'm wondering is there any way that we can throw those paragraphs out to the TTS model or to the service sooner so that there is less of a gap?
+
+==Status Report: 2026-10-10 21:10 PDT==
+NOT IMPLEMENTED — left as a plan. This ticket reads as an open research question
+rather than a concrete spec, and the right answer depends on measurements you can
+only take on-device, so I did not guess at an implementation. Analysis and a
+proposed approach below.
+
+What the code does today: `SpeechController.enqueueFrom()` queues *every* utterance
+up-front by calling `engine.speak(...)` for the whole article (QUEUE_FLUSH for the
+first, QUEUE_ADD for the rest). So from our side the text is already handed to the
+engine as early as possible. The per-paragraph gap is therefore introduced *inside*
+the engine/synthesizer (model warm-up / streaming synthesis latency per utterance),
+not by us waiting.
+
+The one API lever that exists is to pre-render audio asynchronously ahead of the
+play head instead of relying on live streaming synthesis:
+
+  TextToSpeech.synthesizeToFile(text, params, file, utteranceId)
+
+Proposed approach (to consider):
+  1. Keep a small "look-ahead" of, say, one paragraph. As soon as stream N starts,
+     synthesize paragraph N+1 to a cache file via `synthesizeToFile` on a
+     background thread.
+  2. When N finishes, `engine.addSpeech(file, ...)` to play the pre-rendered N+1
+     with zero synthesis latency, then immediately kick off N+2.
+  3. Prune cached files as they are consumed.
+
+Tradeoffs/risks to weigh before implementing:
+  - Storage: one WAV/audio file per paragraph; needs cleanup and a cache dir
+    (app-internal) plus handling of low-storage devices.
+  - Some engines are streaming-first/cloud and may not support (or benefit from)
+    `synthesizeToFile`; older APIs (pre-P/Q) had stricter file-format restrictions.
+  - `synthesizeToFile` output encoding/quality can differ from `engine.speak`,
+    so a voice could sound subtly different across the paragraph boundary.
+  - It adds meaningful concurrency (background synthesis + callback ordering),
+    which has to be integrated with the existing generation/currentIndex logic.
+
+A simpler first experiment: verify whether the gap is really per-paragraph
+synthesis latency. If so, the smallest change that helps is to *combine* adjacent
+paragraphs into larger utterances (fewer `speak()` calls) where the 4 KB network/
+synthesis boundary cost dominates, then layer on `synthesizeToFile` look-ahead only
+if that's still insufficient.
+
+Recommend leaving this open until you've had a chance to observe the gap on your
+target engine; happy to implement the `synthesizeToFile` look-ahead when you
+confirm you want that direction.
+==reply==
+I'm really noticing this mostly with Pocket TTS, which is a local model that sounds like allegedly it should be just able to run around realtime my phone, but it's close or it's slow, and it seems to have this gap of 5-7 seconds at the beginning of each paragraph. It could be that it's just somehow getting those paragraph breaks and just taking a really long pause for each one on purpose, but it seems more likely that it's the beginning of synthesis for that next paragraph. Although sometimes it also seems to have what seem like delimiter breaks even after the first sentence of a particular paragraph. I do really like Pocket TTS. It sounds almost better than a lot of the cloud models you have to pay for. So I'm willing to spend some time investigating it specifically. Maybe research if there's anything that you can see that matches up with that behavior. I think this one is still a research project rather than something to take action on.
+
+==Status Report: 2026-10-10 23:31 PDT==
+RESEARCH (no code changed — kept as a research ticket, as you directed).
+
+What I could and couldn't verify: I could not find public issue threads or a
+vendor spec that *explicitly* documents Pocket TTS's per-utterance behavior (it's
+a relatively small/local neural engine and its repo/issues don't surface a
+cleanly-indexed "5-7s per paragraph" bug I can cite). So the following is an
+engineering analysis of the symptoms you described, plus a concrete on-device
+experiment to pin down the cause — rather than a claim with a source link.
+
+What the symptoms point to:
+- A 5–7 s pause at the *start of each paragraph*, plus occasional "delimiter-like"
+  breaks after the first sentence of a paragraph, is the classic signature of a
+  local neural TTS that (a) is not doing true streaming synthesis and (b) re-runs
+  some model warm-up / encoder setup per `speak()` call. If the engine has to
+  synthesize the whole first sentence/paragraph into a buffer before playback
+  begins, you get a leading silence that scales with the length/difficulty of
+  that chunk — exactly matching "gap at the start of each paragraph."
+- The mid-paragraph "delimiter breaks" are consistent with the *sentence*
+  chunking: if Wcast hands the engine one `speak()` per paragraph, some engines
+  then internally split on sentence punctuation and pay that same non-streaming
+  warm-up cost once per sentence boundary (hence an extra pause after sentence 1,
+  not every sentence — likely the first sentence triggers a warm model path).
+- Because Pocket TTS is local and "close to realtime but not quite," any fixed
+  per-utterance overhead is very visible against a 5–7 s scale, whereas cloud
+  engines hide similar latency behind their network/streaming pipeline.
+
+Two cheap things worth testing before any code change (to isolate the cause):
+1. Sentence-count probe — feed Pocket TTS a single `speak()` containing many
+   sentences vs. one sentence per `speak()`. If the gap is proportional to the
+   number of `speak()` *calls* rather than the amount of text, the cost is
+   per-utterance warm-up (what Wcast already minimizes by queueing whole
+   paragraphs). If the gap instead appears at each *internal* sentence boundary
+   inside one long utterance, it's Pocket TTS's own chunking, and no amount of
+   Wcast-side queueing fixes it — the only lever becomes pre-rendering via
+   `synthesizeToFile` (the plan in the earlier status report) or asking Pocket
+   TTS for a streaming mode.
+2. Paragraph-merge probe — feed Pocket TTS two paragraphs joined into one
+   `speak()` (no blank line). If the 5–7 s gap disappears for the second chunk,
+   the gap is the per-`speak()` warm-up and a "merge adjacent paragraphs into one
+   utterance" heuristic would directly help Pocket TTS (with the risk that very
+   long single utterances hit some engines' max-input limits).
+
+If it turns out to be per-`speak()` warm-up, the smallest, Pocket-TTS-friendly
+change is "combine adjacent short paragraphs into a single utterance" (from the
+original plan's simpler-first-experiment note). If it's Pocket TTS's internal
+sentence chunking, then `synthesizeToFile` look-ahead is the real fix — and that
+is a bigger concurrency change.
+
+Recommendation: still leave this open as research. But if you can run the two
+probes above (or just tell me which of the two "gap disappears when X" outcomes
+you see), I can turn the finding into a precise, minimal implementation.
+==reply==
+It is only a paragraph breaks and it is proportionate to the size of the paragraph. However, it's always larger than any intra-paragraph pauses. So like I found one place where there's a list of things. They're all separate paragraphs. Every one of those has a two-second pause before it. Most larger paragraphs, kind of an average chunk of a history Wikipedia article, does take that five to seven seconds. Reading a title takes about two seconds, and then there'll be that  second chunk while it's loading up the next paragraph. Normally, I would just write this off to, well, it takes that long to start rendering, but it seems like there are no gaps of that length within any given paragraph, no matter how long they are. There will be one or two second breaks inside of a paragraph or a slightly awkward transition that sounds like it probably was a internal chunking being stuck together, but none of them are ever as long as five or seven seconds within any given paragraph, no matter the length. So it does sound like maybe your proposed fix would work. I am concerned about losing the ability to have per paragraph tracking, which seems like might be something related here, but you are closer to the code, so would know better than I am. I think both Kokoro and PocketTTS and probably most of the cloud providers are shielding themselves with chunking algorithms that all seem to work decently, so I'm less concerned about breaking any other engines by having longer chunks of text. 

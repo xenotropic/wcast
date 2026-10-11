@@ -1,0 +1,56 @@
+==Original Issue==
+
+If you are looking at a very long article, like looking at the Napoleonic Wars, and it has so many headings. I think we need to implement some sort of outline at the top	. As a first iteration, let's make it so that there is, if there is more than 3 major headings, major meaning top-level headings, then all of the top-level headings are listed in an outline at the top of the article and they link to jump to that heading within the app. This outline does not need any play buttons. The intent is that you can tap on that. It takes you to the text. You can just press the play button that is there. There are three or fewer major headings, Then there's nothing to do. View looks exactly the same as it does now. I think when it's that short, we don't need to add another UI thing at the top
+
+==Status Report: 2026-10-10 23:31 PDT==
+IMPLEMENTED.
+
+A tappable "Contents" outline now renders at the top of the article, but only
+when the article has more than three top-level headings — where "top-level" means
+h2 sections (`ArticleSection.level == 2 && heading != null`, the lead section is
+level 1 and is excluded). With three or fewer, the view is unchanged, exactly as
+requested.
+
+How it works:
+- `ArticleContent` computes `topLevelHeadings` from the sections and shows a
+  compact `ContentsOutline` (a "Contents" header followed by each top-level
+  heading as a tap-to-jump row) above the `LazyColumn`, inside a new wrapping
+  `Column`. No play buttons on the outline by design — tapping scrolls straight
+  to that heading (via `animateScrollToItem(index, scrollOffset = 0)`), where the
+  existing per-heading play button lives.
+- Crucially, the outline is rendered *above* the `LazyColumn`, not as `LazyColumn`
+  items, so `indexFor(...)` and the follow-mode / "jump to current" scrolling from
+  ticket 06 remain byte-for-byte unchanged. No offset bookkeeping, no regressions
+  to the existing index tests.
+
+Verified: `./gradlew assembleDebug` compiles and `./gradlew testDebugUnitTest`
+passes (all existing tests, including `IndexForTest` and `SubtreeOfTest`, still
+green). Note: the existing "parameter 'title' is never used" warning on `indexFor`
+pre-dates this change and is harmless.
+
+Things to review on-device:
+- The outline sits above the scrollable list, so it stays visible at the top
+  while you scroll the article below it. If you'd prefer it to scroll *with* the
+  article (as an in-list lead item), that's a small follow-up — it just requires
+  offsetting `indexFor`, which I deliberately avoided to keep follow-mode stable.
+
+==reply==
+Yes, we want the outline to stay at the top, so it's something there when you first open it, and you can tap on it, but if it stays there persistently at the top of the screen, it consumes up too much screen real estate that I would rather have displaying the actual text once you're below it. 
+Please also add that when you tap on a section that it goes there but also starts playing it. I think that's generally going to be the intent and might as well save the user a tap.
+Those both seem like fairly straightforward implementations, so if you have pretty high confidence resolutions to both, you can close the ticket. If the resolutions are lower confidence or you have questions, leave it open.  ==Status Report: 2026-10-11 12:43 PDT==
+IMPLEMENTED & CLOSED. Both requested changes are in:
+
+  1. The outline now scrolls WITH the article: it is rendered as the first
+     item inside the LazyColumn (not pinned above it), so it is visible on open
+     but scrolls away once you read past it, freeing the screen for text.
+     `indexFor(...)` gained an `outlineOffset` parameter (0 or 1) so the
+     "jump to current" / follow-mode scrolling still lands on the correct row;
+     the existing `IndexForTest` (offset 0) stays green.
+
+  2. Tapping a contents entry now jumps to that section AND starts reading it
+     (it calls `onPlaySection`, which also enables follow mode).
+
+Files: `ArticleScreen.kt` (outline into LazyColumn, onPlaySection on tap,
+hasOutline/topLevelHeadings helpers, indexFor offset).
+
+Verified: `./gradlew assembleDebug` and `testDebugUnitTest` pass.

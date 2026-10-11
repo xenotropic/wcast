@@ -1,0 +1,16 @@
+==Original Issue==
+Right now there's no easy way to remove the text that is in the search box if you want to change the subject. It is a pretty typical design pattern to have an X in search boxes to clear the text. Please add one for this text box
+
+==Status Report: 2026-10-10 21:10 PDT==
+IMPLEMENTED. Added a clear ("X") control to the search box. In `SearchBar`
+(`app/src/main/java/cloud/morris/wcast/ui/ArticleScreen.kt`) the `trailingIcon`
+now renders an `Icons.Filled.Close` icon button *alongside* the existing search
+icon. The X only appears when the query is non-empty, and tapping it invokes
+`onQueryChange("")` to clear the field. This is the standard Material "clear
+search" pattern; the search action itself is unchanged.
+
+Verified: `./gradlew assembleDebug` compiles cleanly.
+==reply==
+This looks good. You can close this ticket
+
+==CLOSED==

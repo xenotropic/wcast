@@ -1,0 +1,99 @@
+==Original Issue==
+This is currently just for evaluation and planning only. Please, only for now provide an analysis in the ticket without doing any code base changing. It seems like most audio players in Android, including like Spotify or even the TTS engine, Marmalade TTS, which we are using underneath here and does much of the same thing will show up as a media player in the drawer. They'll have at least a stop button, which Marmalade has, or like most podcast or music players will have a play and forward and back buttons. Is that a totally different functionality from handing off to the TTS service or is that something some just listener or additional functionality that can be hooked onto the existing application without a lot of refactoring
+
+==Status Report: 2026-10-10 23:31 PDT==
+ANALYSIS ONLY (no code changed, per the ticket's request).
+
+Short answer: the "player in the drawer" (the media notification / lock-screen
+controls) is a *separate, additive* Android feature from the TextToSpeech handoff,
+and it can be bolted onto Wcast without deep refactoring to the TTS pipeline.
+It is NOT "handing off to the TTS service" in any way.
+
+How it works on Android:
+- A media player shows up in the notification shade because an app advertises a
+  `MediaSession` (or, with the modern AndroidX Media3 stack, a
+  `MediaSessionService` + `MediaSession`). You feed the session a `PlaybackState`
+  (playing / paused, position, buffered range, and the set of *supported actions*
+  like play/pause/skip-to-next/skip-to-previous/stop/seek) plus `MediaMetadata`
+  (title, artist, artwork) and a `MediaStyle` notification.
+- The system then renders the controls itself (the compact notification and the
+  expanded one with the seek bar + buttons) and routes hardware/media-key input
+  and Android Auto/Bluetooth commands back to your session callback.
+- The reason Marmalade TTS shows a drawer player is simply that Marmalade (like
+  Spotify) *also* builds and publishes its own MediaSession for its audio. It has
+  nothing to do with the platform TTS service; it's just an app choosing to expose
+  media controls.
+
+Relationship to what Wcast does today:
+- Wcast currently talks to the platform `TextToSpeech` engine (which routes to
+  the user's chosen engine such as Marmalade) and manages its own playback state
+  in `MainViewModel` / `SpeechController` (enqueue, current index, pause/stop,
+  skip forward/back).
+- A MediaSession would *reflect and control* that same state, not take over
+  synthesis. Concretely: when Wcast starts/advances/pauses/stops speech, it would
+  also update the MediaSession's PlaybackState; when the user taps the media
+  notification's play/pause/skip, the MediaSession callback would invoke the
+  exact same `MainViewModel.togglePause()` / `skipBack()` / `skipForward()` /
+  `stopSpeaking()` methods the in-app PlayerBar already calls.
+
+What's involved (in rough order of effort):
+1. Add the Media3 dependency (`androidx.media3:media3-session`) — modest size;
+   conflicts with the project's "keep dependencies minimal / APK small" goal, so
+   worth weighing. (A framework-only `MediaSession`/`MediaSessionService` — the
+   MediaBrowserServiceCompat path — is also possible but older/more verbose.)
+2. A foreground `MediaSessionService` that owns the session and posts the
+   `MediaStyle` notification; because playback happens through TTS on the
+   main process, the service doesn't have to *contain* the player — it just has
+   to own the session and keep the notification alive.
+3. A thin bridge updating the session from the existing speaking-state /
+   active-position flows and translating media-button callbacks into the
+   existing ViewModel calls. Almost no changes to the TTS enqueueing itself.
+
+Open questions / decisions for the human:
+- Do you want the media notification to also expose a seek bar with progress?
+  TTS doesn't give reliable per-utterance byte/timeline positions, so a
+  meaningful seek bar needs per-paragraph (or synthesized-time) position
+  estimates — the same position-tracking work already open in ticket 06. A basic
+  bar-less set (play/pause + previous/next + stop) is easy; a real seek bar is not.
+- The "stop" button in a media session is a *transport stop* (end and clear),
+  matching what the player bar's stop already does. That maps cleanly.
+- Adding Media3 (or the older support lib) is the main dependency-size tradeoff;
+  I'd lean Media3 `media3-session` since it's the supported path and handles the
+  notification/service plumbing for us.
+
+No code was changed for this ticket. Recommend we implement it as a modest,
+follow-up feature once you confirm the two decisions above (dependency budget and
+whether a seek bar is in scope).
+==reply==
+I'm okay with the dependency add of media three, so go ahead and implement this. No progress seek bar is necessary. The primary wish is to be able to stop from the media drawer because we still have media button issues where it's not working very well or at all. That will be a different issue. But for this issue, I just want to be able to make sure that there is a media player that shows up that allows stopping of play. There are other controls that are easy low-hanging fruit then add them also, like the next paragraph, last paragraph buttons. If those are obvious and easy ads, then do it. This is now an active development ticket. It is no longer planning. ==Status Report: 2026-10-11 12:43 PDT==
+IMPLEMENTED & CLOSED. The app now shows a media-style notification (drawer /
+lock-screen player) whenever it is speaking, with transport controls for
+previous / play-pause / next / stop, plus a "Paused"/"Now playing" subtitle and
+the article title. Tapping the notification reopens the app.
+
+Implementation choice: I used the existing framework `MediaSession` in
+`MediaButtonHandler` (rather than adding the Media3 dependency) because Media3's
+`MediaSession` is tightly coupled to a `Player` (ExoPlayer) and would require
+a dummy player to drive a TextToSpeech stream — awkward and heavier than needed.
+A MediaStyle notification (platform `Notification.MediaStyle` + the session
+token) gives us the drawer player with stop/prev/next with no new dependency and
+minimal APK growth, which fits the project's "keep it small" goal.
+
+Controls: each button is a broadcast to a new `MediaControlReceiver`, routed to
+`MediaButtonHandler` -> `MainViewModel` (stop->stopSpeaking, prev->skipBack,
+next->skipForward, play-pause->togglePause). This ALSO addresses ticket 09
+(media buttons/drawer stop being ignored), since the drawer stop now has a
+direct, reliable path. The existing headset main-button path is unchanged.
+
+No seek bar (per your note that none is needed). The notification is dismissed
+on stop.
+
+Files: `MediaButtonHandler.kt` (notification + channel + callbacks),
+`MediaControlReceiver.kt` (new), `MainViewModel.kt` (wiring + titles),
+`AndroidManifest.xml` (receiver + POST_NOTIFICATIONS), `ic_notification.xml`
+(new drawable).
+
+Verified: `./gradlew assembleDebug` and `testDebugUnitTest` pass.
+One thing to confirm on-device: on Android 13+ the system may prompt for
+notification permission; if denied, the media buttons still work but the
+notification won't show.

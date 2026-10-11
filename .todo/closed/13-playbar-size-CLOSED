@@ -1,0 +1,23 @@
+==Original Issue==
+Please add a setting, maybe some sort of integer. I don't know what the units are or percentage, I don't know, whatever makes sense, of scaling the player bar. Right now it seems like a good size, so the current state should be the default, but I can in particular see that older people or people who are driving, People with accessibility issues, might want to have a larger bar. This may also involve refactoring that bar to be able to lay out well at different sizes. It is fine to flow over into two rows of icons if that's what it takes. I can imagine some people who are not really looking at the text might want to have much bigger controllers like a car mode almost. But let's just leave it to the user to do that via some scalar integer percentage type of value.
+
+==Status Report: 2026-10-11 12:43 PDT==
+IMPLEMENTED & CLOSED. Added a "Player bar size" setting (a Slider, 50%–250%,
+10% steps, default 100%) in the new Settings "Playback" section, persisted via
+`SettingsStore`.
+
+`PlayerBar` now takes the scale and scales the bar height and the icon glyphs
+(icon size = 24dp * scale, bar height = 48dp * scale; buttons stay on Material's
+48dp touch target so hit areas never shrink). The setting is re-read on return
+to the main screen via `LifecycleResumeEffect` -> `refreshSettingsFromStore()`, so
+changes apply immediately.
+
+Note: I chose to scale the bar in place (a single, taller row) rather than flow
+into two rows, since scaling the glyphs/height cleanly gives the bigger-control
+feel without reflowing the page. If you want a true two-row "car mode" layout
+beyond 250% sizing, that's a bigger refactor we can revisit.
+
+Files: `SettingsStore.kt`, `SettingsActivity.kt`, `MainViewModel.kt`,
+`ArticleScreen.kt` (PlayerBar).
+
+Verified: `./gradlew assembleDebug` and `testDebugUnitTest` pass.

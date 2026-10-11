@@ -1,0 +1,16 @@
+==Original Issue==
+Please add into the settings a checkbox about whether tapping play on a subsection just plays that subsection or continues to the end.
+
+==Status Report: 2026-10-11 12:43 PDT==
+IMPLEMENTED & CLOSED. Added a new user setting, "Continue to end", as a checkbox
+in the Settings screen (new "Playback" section, stored via the new
+`SettingsStore` backed by SharedPreferences so it persists across launches).
+
+Default is OFF — unchanged behavior: playing a section reads that section's
+subtree (itself + subheadings). When ON, `MainViewModel.playSection` instead
+speaks from that section through the end of the article.
+
+Files: `SettingsStore.kt` (new), `SettingsActivity.kt` (checkbox UI),
+`MainViewModel.kt` (continuity branch in playSection).
+
+Verified: `./gradlew assembleDebug` and `testDebugUnitTest` pass.

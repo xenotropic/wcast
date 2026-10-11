@@ -1,0 +1,26 @@
+==Original Issue==
+I was listening to an article that contained the string "25.2 in" And that inches was not expanded. Maybe it was because it was a decimal? I think inches are otherwise being expanded. Just review that regular expression and see if it can be improved. If you're confident in your fix, you can close this after implementing.
+
+==Status Report: 2026-10-11 12:20 PDT==
+IMPLEMENTED & CLOSED. "in" was not actually handled at all before: the units
+stage (`Normalizer.expandUnits`) only knew km/cm/mm/ft/mi/mph/kg/etc.; there was
+no "in" entry, so both "5 in" and "25.2 in" went un-expanded ("inches" spelled
+out in full was never an issue — only the abbreviation).
+
+Added `put("in", "inches")` to `UNIT_WORDS`. The existing `(?<=\d)` guard
+(careful: it looks back a single character, so it already handles a decimal
+like "25.2 in" — the "in" follows a digit "2") makes decimals work with no
+extra logic.
+
+Because "in" is also a common preposition, I tagged it (together with "m") as
+an AMBIGUOUS_UNIT: `expandUnits` then also requires the "in" to be followed by
+a non-letter (`(?!\s*[A-Za-z])`). So:
+  - "25.2 in"  -> "25.2 inches"
+  - "5 in"     -> "5 inches"
+  - "3 in)"    -> "3 inches)"
+  while "5 in total" / "5 in the box" are left untouched (preposition).
+
+Tests added in `NormalizerTest` (`expands inches including decimals`,
+`does not expand preposition in after numbers`).
+
+Verified: `./gradlew testDebugUnitTest` passes.

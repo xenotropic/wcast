@@ -1,0 +1,59 @@
+==Original Issue==
+We want years after 1100 to be read out as if they were two sets of two digits. 11 01. 18 46. etc . It's just a matter of putting a space between those two and I think the TTS engines will figure out the split. As an exception for years ending in 01 through 08, such as 1704 and 1402, tts engines seem to respond well to that zero being replaced with the letter o so 17o4 14o2, which is of course just the way people prounce it.  The goal would be to try to recognize this in as many contextual clues for years as possible, but not just every four-digit series that occurs. I think the job would be to look at a bunch of history articles and see what clues happen around years. And then look at some scientific articles and make sure that whatever rules you write don't break other numbers that are written in scientific context. Ideally this is done via regular expressions within the regular expressions file but if it had to be done programmatically that's acceptable.
+
+==Status Report: 2026-10-10 21:10 PDT==
+IMPLEMENTED (programmatically, not via regex_rules.txt — the "o" substitution and
+the 1100–1999 range check are awkward as literal regex rules, and the README for
+the normalization code explicitly reserves "needs more than a single match/replace"
+for Kotlin code).
+
+Added a new "years" stage `expandYears` in `Normalizer`, placed *after* money and
+*before* roman numerals (order of operations doc updated). It rewrites a four-digit
+token in 1100..1999 into two digit-groups — "1846" -> "18 46" — and replaces the
+leading zero with "o" only for a 01..08 second group ("1704" -> "17 o 4"; "1700" and
+"1809" are left as ordinary groups, per "ends in 01 through 08").
+
+To avoid mangling scientific/measurement numbers, it only fires when the number is a
+*plausible year reference*:
+  - immediately preceded by a year lead-in word: in/since/until/from/around/circa/
+    during/between/before/after/by/ad/ce/bc/bce/early/late/mid/to/and/or/year/years/
+    born/died/birth/death/reigned;
+  - immediately preceded by "(", ",", or ";" (birth–death years like "(1846)"); or
+  - it starts a year range ("1914 to 1918" — so both years split consistently).
+It is skipped when followed by a quantity word ("1846 million/percent/times", etc.).
+
+2000+ years and <1100 are deliberately left untouched (engines already read "2025"
+as "twenty twenty five" well, and <1100 are almost always ordinary numbers).
+
+Eight unit tests added (`NormalizerTest`) covering lead-in years, the 0-1..8 "o"
+rule, parenthetical/comma years, ranges, non-year numbers, quantities, and out-of-range.
+
+Caveats to review: this is a heuristic. I could not exhaustively validate every
+Wikipedia article; I examined the documented lead-in list against typical history
+prose and common scientific wording, but edge cases (e.g. "chapter 1914") are
+expected to still need tuning. The guard list lives in `YEAR_LEAD_IN_WORDS` and is
+meant to be trivially editable.
+
+Verified: `./gradlew testDebugUnitTest` passes (60 tests) and `assembleDebug` compiles.
+
+==reply==
+This one seems to be working generally pretty well. one other heuristic I think I found is to use months as a trigger. So if it says November 1914, then you want to use that as a splitting trigger. That seems correct and like a straightforward implementation, If you agree after you have implemented it, then you can close this ticket. If you have any questions, leave it open. 
+==Status Report: 2026-10-11 12:20 PDT==
+IMPLEMENTED & CLOSED (month trigger, per your reply). Added the twelve month
+names to `YEAR_LEAD_IN_WORDS` in `Normalizer`, so a four-digit year immediately
+following a month now splits like any other year reference:
+
+  "November 1914" -> "November 19 14"
+  "march 1848"    -> "march 18 48"
+  "in June 1945"  -> "in June 19 45"
+
+This was a one-line-ish change: `${yearLeadInWord}` already picks up the single
+trailing word before the number, so adding the month names to the existing
+lead-in set was enough — no new parsing path. The existing range/
+quantity/punctuation guards are unchanged, so "December 1846 million" and
+measurement contexts still behave as before.
+
+Tests added in `NormalizerTest` (`reads years after a month as two digit groups`).
+
+Verified: `./gradlew testDebugUnitTest` passes (all normalization + index
+tests green).

@@ -1,0 +1,31 @@
+==Original Issue==
+There were some efforts that we did just in prompts, not in a ticket, around this. It seems like the player does not respect the media player button to stop play, which is fairly important because if a human is suddenly interrupted by something else that's important, you could be listening while driving, and suddenly you have to turn off the sound. You're going to instinctively hit The media player button on your device. So, it's very important that play stops when that happens. I am currently testing with two, maybe three devices and a wired headset which has a physical button and a Koss KSC30 wireless, a Bluetooth device, and probably also I will use an Aftershokz Aeropex . And right now the media buttons on all of those are getting ignored, so it sounds like it's probably an issue within the app. I know that all of those buttons work with Antennipod and Spotify and other media players. This could be related to 07 player in drawer. Maybe once we register as a kind of a media player, this will become easier. We're thinking about looking at these 2 maybe in conjunction. You will find perhaps within the code base how you have tried to fix this before, but still not working. Research first, and if you think you have fixes, feel free to do them. If you need additional information, it's fine also to just leave research or empirical questions for me to provide.
+
+==Status Report: 2026-10-11 12:43 PDT==
+RESEARCH + PARTIAL FIX (implemented in conjunction with ticket 07).
+
+Finding: Wcast already held a framework `MediaSession` (active, with
+FLAG_HANDLES_MEDIA_BUTTONS | FLAG_HANDLES_TRANSPORT_CONTROLS) plus a
+manifest-registered `MediaButtonReceiver`. The most likely reasons physical
+buttons could still be ignored are: the session never advertised
+SKIP_TO_NEXT/PREVIOUS actions (only STOP | PLAY_PAUSE), so many headsets'
+button protocols had nothing to map to; and there was no media notification to
+anchor the session as "the" media app in the drawer.
+
+Change made (via ticket 07): the media session now advertises the full action
+set (play/pause | stop | skip-next | skip-previous) and posts a MediaStyle
+notification, so the system treats Wcast as the active media player. The drawer
+"stop" control now has a direct, reliable path (MediaControlReceiver ->
+stopSpeaking), independent of the headset HID path.
+
+What still needs your on-device confirmation: whether each headset's PHYSICAL
+button (KEYCODE_HEADSETHOOK / MEDIA_PLAY_PAUSE) now reliably reaches us. The
+existing manifest MediaButtonReceiver + in-session callback cover the two
+standard delivery paths, but wired/BT button routing varies by device and can
+still race against other media apps (Spotify). If any device still ignores the
+physical button after this, the next lever is raising that receiver's
+`android:priority` and/or registering a `MediaSessionService` (foreground) so
+Android keeps routing media keys to us while backgrounded.
+
+Please re-test with the wired headset, the Koss KSC30, and the Aftershokz and
+let me know which (if any) still miss.

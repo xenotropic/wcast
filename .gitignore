@@ -36,7 +36,6 @@ keystore.properties
 wcast-instructions.md
 resources/
 runtimelogs/
-.todo/
 
 # ─── Runtime & debug artifacts ─────────────────────────────────────────────────
 *.log

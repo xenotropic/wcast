@@ -1,0 +1,21 @@
+==Original Issue==
+As the human publishing the app in app stores, I am concerned about my personal liability, although this isn't a very dangerous app, nevertheless. So we want to add a pretty typical end-user license agreement. It's just going to be the MIT license again, but by getting the user to actually agree to the MIT license affirmatively, that makes it more like a binding contract that would make it more difficult for them to sue me, the software author. So the task is to add a pop-up window on the first launch. We don't want it to recur on subsequent launches. We don't want it to recur after there are updates, so you need to save a persistent state that the user has agreed. The top of the window will say "End User License Agreement: MIT license". [MIT license text elided here; see the ticket history.] Below that there will be an "I Agree" button and an "Exit" button. The user can only choose one of these; Ensure that they can't exit out of the activity and continue to the app without having clicked I agree somehow. The exit button just terminates the app, exits.
+
+==Status Report: 2026-10-11 12:43 PDT==
+IMPLEMENTED & CLOSED. On first launch (and only then) `MainActivity` shows a
+full-screen "End User License Agreement: MIT license" screen containing the MIT
+license text and exactly two buttons:
+
+  - "I Agree" -> persists accepted=true in `SettingsStore` (SharedPreferences,
+    so it survives app updates) and proceeds into the app.
+  - "Exit" -> leaves accepted=false and calls `finishAffinity()` to terminate
+    the app.
+
+The back button is intercepted (`BackHandler`) while the EULA is showing, so the
+user cannot bypass it. The accepted flag is stored persistently, so the dialog
+never reappears on later launches or after upgrades.
+
+Files: `MainActivity.kt` (EULA gating + EulaScreen composable + LICENSE_TEXT),
+`SettingsStore.kt` (eulaAccepted).
+
+Verified: `./gradlew assembleDebug` passes.

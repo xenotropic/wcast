@@ -1,0 +1,23 @@
+==Original Issue==
+Wikipedia articles contain a lot of references to square miles abbreviated sq mi and those are being read as "SKU me". Please add this to the text normalization pipeline. This seems simple enough that it should be able to be a regular expression that goes in the regular expressions file.
+
+==Status Report: 2026-10-11 12:19 PDT==
+IMPLEMENTED & CLOSED. Added three regex rules to
+`app/src/main/assets/normalization/regex_rules.txt` (applied before the Kotlin
+units stage, so a trailing "mi"/"km"/"ft" won't be re-expanded):
+
+  (?i)\bsq\.?\s*mi\b\.?   -> square miles
+  (?i)\bsq\.?\s*km\b\.?   -> square kilometers
+  (?i)\bsq\.?\s*ft\b\.?   -> square feet
+
+These cover "sq mi", "sq. mi.", "2 sq mi", and the analogous km/ft forms. The
+optional abbreviation period before and after the unit is consumed. I added
+km/ft alongside mi since they are the same class and clearly correct (low
+risk), but mi was the one requested.
+
+Tests added in `NormalizerTest` (`expands square mile abbreviations`):
+"sq mi" -> "square miles", "2 sq mi" -> "2 square miles",
+"sq. km." -> "square kilometers".
+
+Verified: `./gradlew testDebugUnitTest` passes (all normalization + index
+tests green).

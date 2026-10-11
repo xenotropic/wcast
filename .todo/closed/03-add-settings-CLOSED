@@ -1,0 +1,115 @@
+==Original Issue==
+we are going to add a settings activity. Let's put a gear to the right side of our player bar, which is our persistent UI. When tapped, that will open a full separate activity with settings. It will contain two things for right now. one is a link to the Android TTS service settings (i.e., in the android system settings), which is both to raise awareness, but also even for me as a sophisticated user, it's just more convenient to be able to go straight there because you do want to change the voices perhaps to test them out, and then let's type an about, which you can just write something that's sort of like the first paragraph of what's in the readme about what it does, how it was created. Please also think about whatever you would want to put in there in order to be clear about what build and version a person is using. We want to have that for reporting purposes from other users, but also even just for me, the user communicating with you, the LLM, to be able to ensure that we're always in sync and there wasn't an error in copying the APK. Probably a UTC time and the version tag make the most sense? Unless there's some other sort of build identifier that's already being generated.
+
+==Status Report: 2026-10-10 21:10 PDT==
+IMPLEMENTED. Two parts:
+
+1. Gear icon on the player bar: added an `Icons.Filled.Settings` IconButton at the
+   right end of `PlayerBar` (always enabled). Tapping it launches a new
+   `SettingsActivity` via an explicit Intent.
+
+2. New `SettingsActivity` (registered in the manifest, `exported="false"`) with a
+   `SettingsScreen` that contains exactly the two requested items:
+     - "Text-to-speech settings" row — launches the Android system TTS screen
+       (`com.android.settings.TextToSpeechSettings`) with a fallback to the generic
+       Settings screen if that action isn't present on the device.
+     - An "About" block — app name, a one-line tagline and a short paragraph based
+       on the README's opening description, plus the build identity requested for
+       support/reporting.
+
+Build/version identification: I enabled `buildConfig = true` in
+`app/build.gradle.kts` and added a generated `BuildConfig.BUILD_TIME_UTC` field
+(ISO-8601 UTC, e.g. "2026-10-11T04:07:57Z"), regenerated on each build. The About
+screen shows Version (versionName), Version code (versionCode), and Build (UTC) —
+so there are two independent identifiers: the version tag and the exact UTC build
+time. This covers your "UTC time and version tag" idea and also protects against a
+stale APK being copied (the UTC timestamp will differ build-to-build).
+
+Note on the build timestamp: it changes on every build, so any two APKs are
+distinguishable even at the same versionName. That's intentional and useful for
+the "are we in sync" use case.
+
+Verified: `./gradlew assembleDebug` compiles, and the generated BuildConfig was
+inspected to confirm `BUILD_TIME_UTC` is populated correctly.
+
+==reply==
+Generally looks good. two things: (1) I'm getting the fallback to general settings. This is on a pixel 8A Android 17 in case that helps you look up. There must be some other activity names that you can go to. When I look at it on my phone, it shows up under Talkback Settings, and then there's one called text-to-speech, and the heading is text-to-speech output, just in case that helps you look it up or figure out what it actually is called so that we can go directly there programmatically (2) I realized we need to put in a Wikipedia attribution because all of the content is CC by SA. Let's add a sort of legal disclaimer for them in case they look at it "Content & Licensing
+
+Article content served by Wcast is sourced from Wikipedia. Text is available under the Creative Commons Attribution-ShareAlike 4.0 License; additional terms may apply.
+
+Wcast is an independent application and is not affiliated with, endorsed by, or sponsored by the Wikimedia Foundation."
+
+==Status Report: 2026-10-10 21:28 PDT==
+REVISION (in response to the reply). Two changes:
+
+1. TTS settings deep-link fixed. The previous code built
+   `Intent("com.android.settings.TextToSpeechSettings")` — that string is the
+   *activity class name*, not an intent *action*, so there is nothing to resolve
+   and it always fell through to the generic Settings screen. The settings app
+   exposes the "Text-to-speech output" screen via the public action
+   `com.android.settings.TTS_SETTINGS` (backed by
+   `com.android.settings.Settings$TextToSpeechSettingsActivity`; verified against
+   the AOSP Settings manifest). `openTtsSettings()` now uses that action, keeping
+   the generic-Settings fallback as a safety net. This should deep-link straight
+   to "Text-to-speech output" on your Pixel 8a / Android 17. (Note: it *lives*
+   under accessibility/TalkBack in the tree, but the action jumps directly to the
+   TTS output screen, which is what you want.)
+
+2. Added the Wikipedia attribution / licensing disclaimer to the About block as a
+   "Content & Licensing" section, with your exact wording verbatim (CC BY-SA 4.0
+   notice + the "not affiliated with ... the Wikimedia Foundation" notice).
+
+Verified: `./gradlew assembleDebug` compiles.
+
+==reply==
+Please make the URL to visit the repository clickable. and then this is more about the UI of the control bar generally, but it relates to the settings icon. I want the settings icon to be where it is, but put all the play buttons centered. So it should be the go to my location all the way on the left, settings all the way on the right as they are, and then move those four icons for controls to the center.
+
+==Status Report: 2026-10-10 22:24 PDT==
+REVISION (in response to the second reply). Two changes:
+
+1. Repository URL is now clickable. The "Issues, feedback, or comments? Visit
+   https://github.com/xenotropic/wcast" line is rendered as a ClickableText with
+   the URL styled as a link (primary color + underline); tapping it opens the
+   repository in the browser via an ACTION_VIEW intent (wrapped defensively so a
+   missing handler can't crash).
+
+2. Player bar controls centered. Replaced the single Row with a Box so the four
+   transport controls (previous / play-pause / next / stop) form a cluster that is
+   exactly centered, while "jump to current reading position" stays pinned to the
+   far left edge and the settings gear stays pinned to the far right edge.
+
+Verified: `./gradlew assembleDebug` compiles.
+
+==reply==
+
+Confirm those two issues are fixed. Clickable URL and player bar controls are centered. 
+
+The build date here should always be in Pacific time in a way that indicates that rather than UTC. And I'm seeing that the version number here does not match up with the current tag. Can you modify wherever in the code base is necessary, maybe in the agents MD to make sure there's a reminder to all agents that are updating this that If there's a build, that build time needs to go in here. if a release tag, then that goes in here. need it to be in context that those things need to be kept up to date
+
+==Status Report: 2026-10-10 23:31 PDT==
+REVISION (in response to the third reply). Two changes:
+
+1. Build timestamp is now Pacific time. `app/build.gradle.kts` no longer emits a
+   UTC string; it now formats `BuildConfig.BUILD_TIME_PT` using the
+   `America/Los_Angeles` timezone with an explicit zone suffix (e.g.
+   "2026-10-10T23:32:53 PDT"), so the About screen is unambiguous about the
+   timezone. The About row label changed from "Build (UTC)" to "Build (Pacific)".
+
+2. Added a reminder to `AGENTS.md` (under Versioning) that agents must keep the
+   in-app build identity in sync: whenever a version changes, the build must
+   produce a fresh `BUILD_TIME_PT` and `versionName` must match the intended tag,
+   so the About screen never reports a stale version or timestamp.
+
+Note on "version number doesn't match the current tag": the About screen reads
+`BuildConfig.VERSION_NAME`, which is `versionName` from `build.gradle.kts`. That
+was `0.1`/`0.3` in earlier builds and has since been bumped to `0.4` to match the
+`v0.4` tag (this pass was cut alongside release 0.4). The timestamp is the
+second, independent identifier that guards against a stale/copied APK even at the
+same version.
+
+Verified: `./gradlew assembleDebug` compiles, and the generated BuildConfig was
+inspected to confirm `BUILD_TIME_PT` is populated with the PDT timezone.
+
+==reply==
+This looks good. There might be other settings things, but I think those are probably better handled than other tickets. you can close this one. ==Status Report: 2026-10-11 12:43 PDT==
+CLOSED (per your "you can close this one" reply). No further changes made.

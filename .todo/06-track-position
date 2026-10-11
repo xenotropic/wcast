@@ -1,0 +1,36 @@
+==Original Issue==
+There currently is the line that goes on the left side of the screen with whatever's being read, and that works well. However, a lot of times you're listening, so you're not scrolling or doing anything with the phone. And under those circumstances, we would want the view to follow where that line is. We want the currently read paragraph to be always the top paragraph. But we also want the user to be able to scroll around if they want to. So the rule is that if the user taps the Find My Location button or if they press play some place, then the app goes into a sort of scrolling mode where it stays with where the currently read section is, keeping it, that paragraph, at the top of the screen. But if the user breaks that by scrolling, then it stops until they tap one of those buttons again. This is a little bit similar to how most mapping applications work in terms of keeping the user's location at the center of the view by default, but of course you can scroll other places if you want to, and then you can come back to it by pressing the My Location button
+
+==Status Report: 2026-10-10 22:24 PDT==
+IMPLEMENTED. "Follow" scrolling mode in `ArticleScreen`.
+
+Behavior:
+- Enter follow mode by tapping the "jump to current reading position" control
+  (the crosshair at the far left of the player bar) OR by pressing any play
+  button (read full article / read section). On entry, the currently-read row is
+  animated to the top of the list.
+- While following, each time the reading position advances (a new paragraph or
+  section heading starts), the view animates so that new position sits at the
+  top of the screen — like a podcast/maps "keep me centred" mode.
+- A manual scroll (a real finger drag) exits follow mode until one of the two
+  triggers above is used again. Opening a different article also resets it.
+
+How:
+- Added a `followReading` boolean state plus two `LaunchedEffect`s: one that
+  watches `listState.interactionSource.interactions` and turns following off on a
+  `DragInteraction.Start` (programmatic `animateScrollToItem`/`scrollToItem` never
+  emit drag interactions, so only the user's own scrolling breaks it), and one
+  keyed on `activePosition`/`followReading` that keeps the current row pinned top.
+- `animateScrollToItem(index, scrollOffset = 0)` is used everywhere so the target
+  paragraph lands flush with the top.
+
+Notes / things to verify on-device:
+- Because entering play at the article level starts by speaking the title (row 0),
+  following initially pins the title to the top, then advances paragraph by
+  paragraph. That matches the ticket's "press play some place" intent.
+- Follow is driven by the existing `activePosition` stream (already emitted on
+  every utterance start), so there is no extra TTS wiring — it reuses what the
+  left margin indicator already consumes.
+
+Verified: `./gradlew assembleDebug` compiles and `./gradlew testDebugUnitTest`
+passes.

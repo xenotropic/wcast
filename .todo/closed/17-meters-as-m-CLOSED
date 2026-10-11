@@ -1,0 +1,33 @@
+==Original Issue==
+There are many references to meters in Wikipedia articles as "m" and right now those don't seem to all be getting normalized to meters. Can you review the existing normalization and try to improve upon it? Obviously it's challenging because it's just a single letter, but usually beforehand there's going to be a number which potentially could involve decimals and then following that M, there's going to be some sort of non-word character parenthesis or a space. It's unlikely this will be perfect and there could be False positives or false negatives, but see if you can just improve it to recognize a little bit more.
+
+==Status Report: 2026-10-11 12:20 PDT==
+IMPLEMENTED. Bare "m" was not in the units table at all before (to avoid false
+positives on a single letter), so "5 m" was never expanded. Added
+`put("m", "meters")` to `UNIT_WORDS`, tagged "m" (together with "in") as an
+AMBIGUOUS_UNIT, and gave `expandUnits` a `(?!\s*[A-Za-z])` lookahead for those
+ambiguous keys.
+
+This implements your suggested heuristic: a number (with optional decimal)
+before, and a non-word character after (end, "),", ")", or a space followed by
+punctuation/capitals). Results:
+
+  - "5 m"                 -> "5 meters"
+  - "12.5 m,"             -> "12.5 meters,"
+  - "the wall is 5 m (16 ft) high" -> "... 5 meters (16 feet) high"
+  - "a 5 m tall building" -> unchanged  (deliberate, accepted false negative:
+                            "m" followed by a word is left alone)
+
+Longest-first ordering means "mm"/"cm"/"km"/"m2" still win over bare "m", and
+the area regex rule "sq m" (ticket 16) already resolved before this stage.
+
+Tests added in `NormalizerTest` (`expands meters following a number`,
+`does not expand m when followed by a word`).
+
+Known trade-off (per your ticket): phrases like "5 m tall" / "5 m wide" are
+common measurements but are left un-expanded because "m" is followed by a
+letter. If you'd like, a future tweak could add a whitelist of measurement
+adjectives (tall/wide/long/high/deep/away) that still count as "safe to
+expand" — I left them out for now to keep false positives low.
+
+Verified: `./gradlew testDebugUnitTest` passes.

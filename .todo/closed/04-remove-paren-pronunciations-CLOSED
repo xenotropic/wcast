@@ -1,0 +1,37 @@
+==Original Issue==
+Articles about places or also sometimes people will contain pronunciations within parentheses that are surviving all of the existing text preprocessing. See if there's a CSS selector that can be used. If not, then we could just write a regular expression that removes based upon that information line showing up with that many spaces after an initial parenthesis, and then just wipe out the entire parenthetical. But that's only if you can't solve via CSS. two examples are below
+--
+
+Illinois ( ⓘ IL-ih-NOY) is a state in the Midwestern United States
+
+--
+
+Timbuktu ( ⓘ TIM-buk-TOO; French: Tombouctou ; Koyra Chiini: Tunbutu ; Tuareg: ⵜⵏⵀⵗⵜ, romanized: Tin Bukt )
+
+
+
+ -- 
+
+==Status Report: 2026-10-10 21:10 PDT==
+IMPLEMENTED via a regular expression (a dedicated CSS selector wasn't reliable here —
+these glosses survive because they aren't consistently wrapped in `.IPA`/`.phonemic`
+nodes). The reliable signal is the circled-info marker U+24D8 (ⓘ) that precedes every
+pronunciation, so I added `PRONUNCIATION_PAREN_REGEX = \(\s*ⓘ.*?\)` and applied it in
+`cleanText()` (`app/src/main/java/cloud/morris/wcast/data/WikipediaRepository.kt`),
+after the existing empty-bracket cleanup and before the whitespace collapse.
+
+The non-greedy `.*?` up to the next `)` strips the entire gloss in one go, which
+handles both examples — the simple "Illinois ( ⓘ IL-ih-NOY)" and the multi-language
+Timbuktu form with semicolon-separated variants that contain no inner parens. This
+removes the pronunciation from *both* the on-screen text and the spoken text (both
+are fed by `ArticleParagraph.text`), which is what the ticket wants.
+
+Note: I did not add a unit test because `cleanText()` is a private method inside the
+network/Android-bound `WikipediaRepository`. If you'd like this covered, I can extract
+the scrub regexes into a small framework-free object (like `LinkCapture`) and test
+them; flagging as optional follow-up.
+
+Verified: `./gradlew assembleDebug` compiles.
+
+==reply==
+Of course, there's many places things like this might show up, but we can call this one closed as completed for now, Please mark it as such next time you look at this 
