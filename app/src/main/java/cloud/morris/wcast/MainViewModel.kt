@@ -78,6 +78,8 @@ class MainViewModel : AndroidViewModel {
 
     private val mediaButtonHandler = MediaButtonHandler(getApplication<Application>())
 
+    private val settings = SettingsStore(getApplication<Application>())
+
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
 
@@ -90,6 +92,10 @@ class MainViewModel : AndroidViewModel {
     /** The exact position in the article currently being read (null when idle). */
     private val _activePosition = MutableStateFlow<ActivePosition?>(null)
     val activePosition: StateFlow<ActivePosition?> = _activePosition.asStateFlow()
+
+    /** Player-bar control size as a percentage (100 = default), from settings. */
+    private val _playerBarScale = MutableStateFlow(settings.playerBarScale)
+    val playerBarScale: StateFlow<Int> = _playerBarScale.asStateFlow()
 
     private var searchJob: Job? = null
 
@@ -115,6 +121,11 @@ class MainViewModel : AndroidViewModel {
         mediaButtonHandler.onMainButtonPressed = { stopSpeaking() }
         // Losing audio focus (call, or another app taking over) also stops speech.
         mediaButtonHandler.onFocusLost = { stopSpeaking() }
+    }
+
+    /** Re-reads user preferences so the UI reflects changes made in Settings. */
+    fun refreshSettingsFromStore() {
+        _playerBarScale.value = settings.playerBarScale
     }
 
     fun onQueryChanged(text: String) {
@@ -202,9 +213,36 @@ class MainViewModel : AndroidViewModel {
         stopSpeaking()
         // Playing a heading reads its whole subtree: the section itself plus any
         // deeper following sections (its subheadings), in document order. Leaf
-        // sections simply resolve to themselves.
-        speechController.speakSections(subtreeOf(state.sections, id))
+        // sections simply resolve to themselves. When the "continue to the end"
+        // setting is enabled, instead read from this section through the end of
+        // the article.
+        val sectionsToSpeak = if (settings.continuity) {
+            state.sections.drop(state.sections.indexOfFirst { it.id == id })
+        } else {
+            subtreeOf(state.sections, id)
+        }
+        speechController.speakSections(sectionsToSpeak)
         _speakingState.value = SpeakingState.Section(id)
+        mediaButtonHandler.onPlaybackStarted()
+    }
+
+    /**
+     * Starts playback from a specific paragraph within a section, following the
+     * continuity setting: with it off, reads from that paragraph through the end
+     * of its own section; with it on, continues through the end of the article.
+     */
+    fun playParagraph(sectionId: String, paragraphIndex: Int) {
+        val state = _uiState.value
+        if (state !is UiState.Article) return
+        val index = state.sections.indexOfFirst { it.id == sectionId }
+        if (index < 0) return
+        val section = state.sections[index]
+        if (paragraphIndex !in section.paragraphs.indices) return
+
+        stopSpeaking()
+        val following = if (settings.continuity) state.sections.drop(index + 1) else emptyList()
+        speechController.speakFromParagraph(section, paragraphIndex, following)
+        _speakingState.value = SpeakingState.Section(sectionId)
         mediaButtonHandler.onPlaybackStarted()
     }
 

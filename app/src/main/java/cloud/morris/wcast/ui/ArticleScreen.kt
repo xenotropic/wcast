@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.interaction.DragInteraction
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -59,9 +60,11 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.ClickableText
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 import cloud.morris.wcast.ActivePosition
@@ -79,7 +82,15 @@ fun ArticleScreen(viewModel: MainViewModel = viewModel()) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val speakingState by viewModel.speakingState.collectAsStateWithLifecycle()
     val activePosition by viewModel.activePosition.collectAsStateWithLifecycle()
+    val playerBarScale by viewModel.playerBarScale.collectAsStateWithLifecycle()
     val context = LocalContext.current
+
+    // Re-read user preferences (e.g. player-bar size) whenever the user returns
+    // from Settings, so the change applies immediately without a restart.
+    LifecycleResumeEffect(Unit) {
+        viewModel.refreshSettingsFromStore()
+        onPauseOrDispose { }
+    }
 
     // Survives across article loads; reset when a new article is opened below.
     val listState = rememberLazyListState()
@@ -104,7 +115,8 @@ fun ArticleScreen(viewModel: MainViewModel = viewModel()) {
 
     fun scrollToCurrentTop() {
         val state = uiState as? UiState.Article ?: return
-        val index = indexFor(state.title, state.sections, activePosition) ?: return
+        val offset = if (hasOutline(state.sections)) 1 else 0
+        val index = indexFor(state.title, state.sections, activePosition, offset) ?: return
         followReading = true
         scope.launch { listState.animateScrollToItem(index, scrollOffset = 0) }
     }
@@ -114,7 +126,8 @@ fun ArticleScreen(viewModel: MainViewModel = viewModel()) {
     LaunchedEffect(activePosition, followReading) {
         if (!followReading) return@LaunchedEffect
         val state = uiState as? UiState.Article ?: return@LaunchedEffect
-        val index = indexFor(state.title, state.sections, activePosition) ?: return@LaunchedEffect
+        val offset = if (hasOutline(state.sections)) 1 else 0
+        val index = indexFor(state.title, state.sections, activePosition, offset) ?: return@LaunchedEffect
         listState.animateScrollToItem(index, scrollOffset = 0)
     }
 
@@ -136,6 +149,7 @@ fun ArticleScreen(viewModel: MainViewModel = viewModel()) {
         )
         PlayerBar(
             speakingState = speakingState,
+            playerBarScale = playerBarScale,
             onJumpToCurrent = ::scrollToCurrentTop,
             onPlayPause = viewModel::togglePause,
             onSkipBack = viewModel::skipBack,
@@ -168,6 +182,10 @@ fun ArticleScreen(viewModel: MainViewModel = viewModel()) {
                     onPlaySection = { id ->
                         followReading = true
                         viewModel.playSection(id)
+                    },
+                    onPlayParagraph = { sectionId, paragraphIndex ->
+                        followReading = true
+                        viewModel.playParagraph(sectionId, paragraphIndex)
                     },
                     onLinkClick = viewModel::openArticle
                 )
@@ -214,6 +232,7 @@ private fun SearchBar(
 @Composable
 private fun PlayerBar(
     speakingState: SpeakingState,
+    playerBarScale: Int,
     onJumpToCurrent: () -> Unit,
     onPlayPause: () -> Unit,
     onSkipBack: () -> Unit,
@@ -228,6 +247,14 @@ private fun PlayerBar(
         else -> false
     }
 
+    // Player-bar size is a user setting expressed as a percentage (100 = the
+    // original layout). Buttons stay on the platform's 48dp touch target so the
+    // bar remains tappable; only the drawn bar height and the icon glyphs scale,
+    // so larger values give bigger controls without shrinking the hit areas.
+    val scale = playerBarScale.coerceIn(50, 250) / 100f
+    val barHeight = (48f * scale).dp
+    val iconSize = (24f * scale).dp
+
     // The bar is always visible (fixed height) so the page never reflows; when
     // nothing is playing the controls are simply disabled.
     //
@@ -237,7 +264,7 @@ private fun PlayerBar(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(48.dp)
+            .height(barHeight)
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .padding(horizontal = 8.dp),
     ) {
@@ -249,7 +276,8 @@ private fun PlayerBar(
             Icon(
                 imageVector = Icons.Filled.CenterFocusStrong,
                 contentDescription = "Jump to current reading position",
-                tint = MaterialTheme.colorScheme.primary
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(iconSize)
             )
         }
         Row(
@@ -260,28 +288,32 @@ private fun PlayerBar(
                 Icon(
                     imageVector = Icons.Filled.SkipPrevious,
                     contentDescription = "Previous section",
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(iconSize)
                 )
             }
             IconButton(onClick = onPlayPause, enabled = isActive) {
                 Icon(
                     imageVector = if (isActive && !isPaused) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                     contentDescription = if (isActive && !isPaused) "Pause" else "Play",
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(iconSize)
                 )
             }
             IconButton(onClick = onSkipForward, enabled = isActive) {
                 Icon(
                     imageVector = Icons.Filled.SkipNext,
                     contentDescription = "Next section",
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(iconSize)
                 )
             }
             IconButton(onClick = onStop, enabled = isActive) {
                 Icon(
                     imageVector = Icons.Filled.Stop,
                     contentDescription = "Stop",
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(iconSize)
                 )
             }
         }
@@ -293,7 +325,8 @@ private fun PlayerBar(
             Icon(
                 imageVector = Icons.Filled.Settings,
                 contentDescription = "Settings",
-                tint = MaterialTheme.colorScheme.primary
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(iconSize)
             )
         }
     }
@@ -391,33 +424,33 @@ private fun ArticleContent(
     listState: LazyListState,
     onPlayWholeArticle: () -> Unit,
     onPlaySection: (String) -> Unit,
+    onPlayParagraph: (String, Int) -> Unit,
     onLinkClick: (String) -> Unit
 ) {
     val isTitleActive = activePosition?.sectionId == null
 
     // Top-level (h2 / level 2) sections with a heading. When there are more
-    // than three, show a "Contents" outline at the top that jumps to each one.
-    val topLevelHeadings = sections.filter { it.heading != null && it.level == 2 }
+    // than three, show a "Contents" outline as the first scrollable item so it
+    // is visible on open but scrolls away with the rest of the article.
+    val topLevelHeadings = topLevelHeadings(sections)
     val showOutline = topLevelHeadings.size > 3
-    val scope = rememberCoroutineScope()
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
         if (showOutline) {
-            ContentsOutline(topLevelHeadings) { section ->
-                val index = indexFor(title, sections, ActivePosition(section.id, null))
-                if (index != null) {
-                    // Scroll the article so the chosen heading is at the top.
-                    scope.launch { listState.animateScrollToItem(index, scrollOffset = 0) }
+            item(key = "outline") {
+                ContentsOutline(topLevelHeadings) { section ->
+                    // Tapping a contents entry jumps to that section AND starts
+                    // reading it (saving the user a second tap on the heading's
+                    // play button). onPlaySection also turns on follow mode.
+                    onPlaySection(section.id)
                 }
             }
         }
-
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
         item(key = "title") {
             ArticleRow(
                 isActive = isTitleActive,
@@ -484,7 +517,16 @@ private fun ArticleContent(
                     ArticleRow(
                         isActive = paragraphActive,
                         content = {
-                            SelectionContainer {
+                            // Double-tapping a paragraph starts reading from it
+                            // (following the continuity setting). A single tap /
+                            // drag still selects text and taps links as before.
+                            SelectionContainer(
+                                modifier = Modifier.pointerInput(paragraph) {
+                                    detectTapGestures(
+                                        onDoubleTap = { onPlayParagraph(section.id, index) }
+                                    )
+                                }
+                            ) {
                                 ParagraphText(
                                     paragraph = paragraph,
                                     onLinkClick = onLinkClick
@@ -496,15 +538,13 @@ private fun ArticleContent(
             }
         }
     }
-    }
 }
 
 /**
- * A compact, tap-to-jump "Contents" list shown at the top of long articles
- * (those with more than three top-level h2 headings). Each row is a heading;
- * tapping it scrolls the article so that heading is at the top. No play
- * controls here by design — the user jumps first, then presses the play button
- * beside the heading.
+ * A compact, tap-to-jump "Contents" list shown as the first scrollable item of
+ * long articles (those with more than three top-level h2 headings). Each row is
+ * a heading; tapping it jumps to that section and starts reading it (the
+ * playback is handled by the caller, not here).
  */
 @Composable
 private fun ContentsOutline(
@@ -541,31 +581,49 @@ private fun ContentsOutline(
 }
 
 /**
+ * Top-level (h2 / level 2) sections with a heading, used to build the
+ * "Contents" outline for long articles.
+ */
+private fun topLevelHeadings(sections: List<ArticleSection>): List<ArticleSection> =
+    sections.filter { it.heading != null && it.level == 2 }
+
+/**
+ * Whether to show the contents outline for [sections]: true when there are
+ * more than three top-level headings (short articles don't need it).
+ */
+private fun hasOutline(sections: List<ArticleSection>): Boolean =
+    topLevelHeadings(sections).size > 3
+
+/**
  * Maps an [ActivePosition] to the flat item index used by the [LazyColumn] in
  * [ArticleContent], or null when the position does not resolve to a row. The
- * index layout is: row 0 = title, then for each section its heading (if any)
- * followed by its paragraphs in order. Kept in lock-step with the rendering
- * loop above so the "jump to current" control scrolls to the right place.
+ * index layout is: (optional contents outline), row 0 = title, then for each
+ * section its heading (if any) followed by its paragraphs in order.
+ * [outlineOffset] is the number of leading items (0 or 1) occupied by the
+ * optional contents outline, so the same function works whether or not the
+ * outline is shown. Kept in lock-step with the rendering loop in
+ * [ArticleContent] so the "jump to current" control scrolls to the right place.
  */
 internal fun indexFor(
     title: String,
     sections: List<ArticleSection>,
-    position: ActivePosition?
+    position: ActivePosition?,
+    outlineOffset: Int = 0
 ): Int? {
     val pos = position ?: return null
 
     // Title row.
-    if (pos.sectionId == null) return 0
+    if (pos.sectionId == null) return outlineOffset
 
     var index = 1 // account for the title row
     for (section in sections) {
         val isMatch = section.id == pos.sectionId
         if (section.heading != null) {
-            if (isMatch && pos.paragraphIndex == null) return index
+            if (isMatch && pos.paragraphIndex == null) return index + outlineOffset
             index++
         }
         if (isMatch && pos.paragraphIndex != null) {
-            return index + pos.paragraphIndex
+            return index + pos.paragraphIndex + outlineOffset
         }
         index += section.paragraphs.size
     }

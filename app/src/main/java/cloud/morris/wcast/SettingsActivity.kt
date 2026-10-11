@@ -28,6 +28,8 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import cloud.morris.wcast.ui.theme.WcastTheme
+import kotlin.math.roundToInt
 
 /**
  * A small settings/about screen reached from the gear icon on the main screen's
@@ -54,6 +57,7 @@ class SettingsActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val settings = SettingsStore(this)
         setContent {
             WcastTheme {
                 Surface(
@@ -64,6 +68,10 @@ class SettingsActivity : ComponentActivity() {
                         versionName = BuildConfig.VERSION_NAME,
                         versionCode = BuildConfig.VERSION_CODE,
                         buildTimePt = BuildConfig.BUILD_TIME_PT,
+                        continuity = settings.continuity,
+                        onContinuityChange = { settings.continuity = it },
+                        playerBarScale = settings.playerBarScale,
+                        onPlayerBarScaleChange = { settings.playerBarScale = it },
                         onBack = { finish() },
                         onOpenTtsSettings = ::openTtsSettings
                     )
@@ -100,6 +108,10 @@ private fun SettingsScreen(
     versionName: String,
     versionCode: Int,
     buildTimePt: String,
+    continuity: Boolean,
+    onContinuityChange: (Boolean) -> Unit,
+    playerBarScale: Int,
+    onPlayerBarScaleChange: (Int) -> Unit,
     onBack: () -> Unit,
     onOpenTtsSettings: () -> Unit
 ) {
@@ -143,6 +155,21 @@ private fun SettingsScreen(
                 title = "Text-to-speech settings",
                 subtitle = "Choose your engine and voice in the Android settings",
                 onClick = onOpenTtsSettings
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+            SettingsSection(title = "Playback")
+            SettingsToggleRow(
+                title = "Continue to end",
+                subtitle = "When playing a section, keep reading through the end of the article instead of stopping at the end of the section.",
+                checked = continuity,
+                onCheckedChange = onContinuityChange
+            )
+            SettingsSliderRow(
+                title = "Player bar size",
+                subtitle = "Scale the size of the playback controls.",
+                value = playerBarScale,
+                onValueChange = onPlayerBarScaleChange
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -193,6 +220,75 @@ private fun SettingsRow(
             imageVector = Icons.Filled.ChevronRight,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun SettingsToggleRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, style = MaterialTheme.typography.bodyLarge)
+            if (subtitle.isNotBlank()) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Spacer(modifier = Modifier.width(16.dp))
+        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+@Composable
+private fun SettingsSliderRow(
+    title: String,
+    subtitle: String,
+    value: Int,
+    onValueChange: (Int) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 14.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = title, style = MaterialTheme.typography.bodyLarge)
+                if (subtitle.isNotBlank()) {
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Text(
+                text = "$value%",
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 16.dp)
+            )
+        }
+        Slider(
+            value = value.toFloat(),
+            onValueChange = { onValueChange(it.roundToInt()) },
+            valueRange = 50f..250f,
+            steps = 19 // increments of 10%
         )
     }
 }

@@ -160,6 +160,26 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         start(buildList { sections.forEach { s -> addSectionUtterances(s, this) } })
     }
 
+    /**
+     * Speaks [section] starting at [paragraphIndex] (the rest of that section's
+     * paragraphs), optionally continuing into [followingSections] afterwards.
+     * The section heading is skipped — this is used when the user starts
+     * playback from a specific paragraph rather than from the heading.
+     */
+    fun speakFromParagraph(
+        section: ArticleSection,
+        paragraphIndex: Int,
+        followingSections: List<ArticleSection> = emptyList()
+    ) {
+        val utterances = buildList {
+            section.paragraphs.drop(paragraphIndex).forEachIndexed { i, p ->
+                add(Utterance(sectionId = section.id, paragraphIndex = paragraphIndex + i, text = p.text))
+            }
+            followingSections.forEach { s -> addSectionUtterances(s, this) }
+        }
+        start(utterances)
+    }
+
     /** Appends a section's heading and paragraph utterances, in order. */
     private fun addSectionUtterances(section: ArticleSection, dest: MutableList<Utterance>) {
         section.heading?.let {
