@@ -266,13 +266,17 @@ class Normalizer(private val rules: NormalizationRules) {
     /**
      * Words that, immediately before a four-digit number, mark it as a year.
      * Kept deliberately narrow; notably *absent* are prepositions used for
-     * measurements ("of 1216 Å") and copulas ("is 1984").
+     * measurements ("of 1216 Å") and copulas ("is 1984"). Months are included
+     * because "November 1914" is an unambiguous year reference.
      */
     private val YEAR_LEAD_IN_WORDS = setOf(
         "in", "since", "until", "from", "around", "circa", "during", "between",
         "before", "after", "by", "ad", "ce", "bc", "bce", "early", "late", "mid",
         "to", "and", "or", "year", "years", "born", "died", "birth", "death",
-        "reigned"
+        "reigned",
+        // Months of the year ("November 1914" reads as a year).
+        "january", "february", "march", "april", "may", "june", "july",
+        "august", "september", "october", "november", "december"
     )
 
     /**
@@ -378,6 +382,10 @@ class Normalizer(private val rules: NormalizationRules) {
      * Unit abbreviations mapped to their spoken word. Kept to a short, safe list
      * to avoid false positives ("m" alone, "in" as a preposition, "mi" as a
      * syllable) — each is expanded only when immediately preceded by a digit.
+     *
+     * The single-letter "m" and the preposition "in" are inherently ambiguous,
+     * so they are only expanded when additionally followed by a non-letter
+     * (see [AMBIGUOUS_UNITS] and [expandUnits]).
      */
     private val UNIT_WORDS: Map<String, String> = buildMap {
         put("km", "kilometers"); put("cm", "centimeters"); put("mm", "millimeters")
@@ -385,19 +393,40 @@ class Normalizer(private val rules: NormalizationRules) {
         put("km/h", "kilometers per hour"); put("mph", "miles per hour")
         put("km2", "square kilometers"); put("m2", "square meters")
         put("kg", "kilograms")
+        put("in", "inches")   // e.g. "25.2 in" -> "25.2 inches" (decimal-safe)
+        put("m", "meters")    // e.g. "5 m" -> "5 meters"
     }
+
+    /**
+     * Units that are a single letter or a common preposition ("m", "in"). These
+     * are only safe to expand when the unit is *not* followed by another word —
+     * e.g. "5 in total" / "5 m tall" must stay untouched, while "5 in)" or "5 m,"
+     * measure inches/meters. [expandUnits] adds this lookahead for these keys.
+     */
+    private val AMBIGUOUS_UNITS = setOf("m", "in")
 
     /**
      * Rewrites a unit abbreviation into words when it directly follows a number
      * ("120 km/h" -> "120 kilometers per hour"). The `(?<=\d)` guard prevents
      * matching the letters inside unrelated words, and longest units are applied
      * first so "km/h" wins over "km".
+     *
+     * For the ambiguous single-letter/preposition units ("m", "in"), a further
+     * lookahead requires the unit to be followed by a non-letter (end, space +
+     * punctuation) so prepositions like "5 in total" and "chapter m" are not
+     * mangled. This allows decimals ("25.2 in") and is deliberately imperfect:
+     * a measurement written "5 m tall" is left alone (an accepted false
+     * negative), trading a few misses for far fewer wrong readings.
      */
     private fun expandUnits(text: String): String {
         val unitPattern = UNIT_WORDS.keys.sortedByDescending { it.length }
         var out = text
         for (unit in unitPattern) {
-            val regex = Regex("""(?i)(?<=\d)\s*${Regex.escape(unit)}\b""")
+            // Ambiguous units must not be followed by another letter; this
+            // disambiguates "5 in" (inches) from "5 in total" (preposition) and
+            // "5 m" (meters) from "5 m tall"/"m" inside a longer token.
+            val suffixGuard = if (unit in AMBIGUOUS_UNITS) """(?!\s*[A-Za-z])""" else ""
+            val regex = Regex("""(?i)(?<=\d)\s*${Regex.escape(unit)}\b$suffixGuard""")
             // Leading space keeps "5 km" -> "5 kilometers" (not "5kilometers");
             // the final cleanup collapses any resulting run of spaces.
             out = regex.replace(out) { " ${UNIT_WORDS[unit]!!}" }

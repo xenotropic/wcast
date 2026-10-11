@@ -49,4 +49,12 @@
 # Bare degree sign: "30°" -> "30 degrees".
 °	 degrees 	
 
+# Area abbreviations: "sq mi" / "sq. mi." (and the analogous km/ft) are read
+# aloud as "square miles" etc. rather than "SKU me". Placed before the units
+# stage so a following "mi"/"m"/"ft" is never re-expanded. The optional
+# abbreviation period after the unit is consumed too.
+(?i)\bsq\.?\s*mi\b\.?	square miles	
+(?i)\bsq\.?\s*km\b\.?	square kilometers	
+(?i)\bsq\.?\s*ft\b\.?	square feet	
+
 

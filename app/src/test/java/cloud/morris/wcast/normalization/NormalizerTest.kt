@@ -100,6 +100,38 @@ class NormalizerTest {
     }
 
     @Test
+    fun `expands square mile abbreviations`() {
+        assertEquals("square miles", normalizer.normalize("sq mi"))
+        assertEquals("2 square miles", normalizer.normalize("2 sq mi"))
+        assertEquals("square kilometers", normalizer.normalize("sq. km."))
+    }
+
+    @Test
+    fun `expands inches including decimals`() {
+        assertEquals("25.2 inches", normalizer.normalize("25.2 in"))
+        assertEquals("5 inches", normalizer.normalize("5 in"))
+        assertEquals("3 inches)", normalizer.normalize("3 in)"))
+    }
+
+    @Test
+    fun `does not expand preposition in after numbers`() {
+        assertEquals("5 in total", normalizer.normalize("5 in total"))
+        assertEquals("5 in the box", normalizer.normalize("5 in the box"))
+    }
+
+    @Test
+    fun `expands meters following a number`() {
+        assertEquals("5 meters", normalizer.normalize("5 m"))
+        assertEquals("12.5 meters,", normalizer.normalize("12.5 m,"))
+        assertEquals("the wall is 5 meters (16 feet) high", normalizer.normalize("the wall is 5 m (16 ft) high"))
+    }
+
+    @Test
+    fun `does not expand m when followed by a word`() {
+        assertEquals("a 5 m tall building", normalizer.normalize("a 5 m tall building"))
+    }
+
+    @Test
     fun `does not expand unit letters inside words`() {
         assertEquals("in the middle", normalizer.normalize("in the middle"))
     }
@@ -153,6 +185,13 @@ class NormalizerTest {
         assertEquals("since 17 76", normalizer.normalize("since 1776"))
         assertEquals("around 15 00", normalizer.normalize("around 1500"))
         assertEquals("during 19 14", normalizer.normalize("during 1914"))
+    }
+
+    @Test
+    fun `reads years after a month as two digit groups`() {
+        assertEquals("November 19 14", normalizer.normalize("November 1914"))
+        assertEquals("march 18 48", normalizer.normalize("march 1848"))
+        assertEquals("in June 19 45", normalizer.normalize("in June 1945"))
     }
 
     @Test
