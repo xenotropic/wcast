@@ -192,7 +192,8 @@ class WikipediaRepository {
         val withoutCitations = raw.replace(CITATION_REGEX, "")
         val withoutLanguageLabels = withoutCitations.replace(LANGUAGE_LABEL_REGEX, "")
         val withoutEmptyBrackets = withoutLanguageLabels.replace(EMPTY_BRACKETS_REGEX, "")
-        return withoutEmptyBrackets.replace(WHITESPACE_REGEX, " ").trim().ifEmpty { null }
+        val withoutPronunciations = withoutEmptyBrackets.replace(PRONUNCIATION_PAREN_REGEX, "")
+        return withoutPronunciations.replace(WHITESPACE_REGEX, " ").trim().ifEmpty { null }
     }
 
     /**
@@ -264,6 +265,22 @@ class WikipediaRepository {
         /** Removes empty language-label brackets left behind by pronunciation nodes. */
         private val LANGUAGE_LABEL_REGEX = Regex(
             """\(\s*(?:(?:US|UK|Spanish|en-US|en-GB|Listen):\s*[,;]?\s*)*\)"""
+        )
+
+        /**
+         * Removes pronunciation helper parentheticals that survive DOM-level
+         * scrubbing. Wikipedia renders these inline as, e.g.
+         * "Illinois ( ⓘ IL-ih-NOY) is…" or
+         * "Timbuktu ( ⓘ TIM-buk-TOO; French: Tombouctou; … )".
+         *
+         * The circled-info marker U+24D8 (ⓘ) is the reliable signal: it only
+         * appears ahead of a pronunciation. Matching non-greedily up to the next
+         * closing parenthesis strips the whole pronunciation gloss in one go,
+         * including the multi-language forms that carry no IPA spans the DOM
+         * scrubbers would have already removed.
+         */
+        private val PRONUNCIATION_PAREN_REGEX = Regex(
+            """\(\s*ⓘ.*?\)"""
         )
 
         /** Cleans up any remaining hollow brackets containing only punctuation. */

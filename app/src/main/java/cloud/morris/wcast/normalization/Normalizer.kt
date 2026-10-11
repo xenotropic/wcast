@@ -40,12 +40,13 @@ import java.text.Normalizer
  *  3. regex rules        — ordered rules from `regex_rules.txt` (dash pauses,
  *                          number ranges, temperature).
  *  4. money              — "$4 billion" -> "four billion dollars".
- *  5. roman numerals     — "Henry VIII" -> "Henry the eighth".
- *  6. units              — "5 km", "120 km/h", "80 mph" -> spoken unit words.
- *  7. fractions          — "3/4" -> "three quarters" (guarded against dates).
- *  8. ordinals           — "3rd" -> "third", "#7" -> "number seven".
- *  9. acronyms           — known pronunciations, then all-caps -> spaced letters.
- * 10. whitespace/punct   — collapse runs and tidy stray punctuation.
+ *  5. years              — "in 1846" -> "in 18 46" (1100–1999, contextual).
+ *  6. roman numerals     — "Henry VIII" -> "Henry the eighth".
+ *  7. units              — "5 km", "120 km/h", "80 mph" -> spoken unit words.
+ *  8. fractions          — "3/4" -> "three quarters" (guarded against dates).
+ *  9. ordinals           — "3rd" -> "third", "#7" -> "number seven".
+ * 10. acronyms           — known pronunciations, then all-caps -> spaced letters.
+ * 11. whitespace/punct   — collapse runs and tidy stray punctuation.
  */
 class Normalizer(private val rules: NormalizationRules) {
 
@@ -58,6 +59,7 @@ class Normalizer(private val rules: NormalizationRules) {
         out = applyReplacements(out, rules.replacements)
         out = applyRegexRules(out, rules.regexRules)
         out = expandMoney(out)
+        out = expandYears(out)
         out = expandRomanNumerals(out)
         out = expandUnits(out)
         out = expandFractions(out)
@@ -207,6 +209,122 @@ class Normalizer(private val rules: NormalizationRules) {
         val dot = normalized.indexOf('.')
         return if (dot < 0) normalized.toLongOrNull() ?: 0
         else normalized.substring(0, dot).toLongOrNull() ?: 0
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Stage 4b: years ("1846" -> "18 46", "1704" -> "17 o 4")
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Years in 1100..1999 are read by TTS engines as cardinal numbers ("one
+     * thousand eight hundred forty six") rather than the conventional "eighteen
+     * forty six" that a native speaker uses for a year. This stage rewrites such
+     * four-digit tokens into two digit-groups, leaving a space so the engine
+     * pronounces each group separately: "1846" -> "18 46".
+     *
+     * Years whose second group is 01..08 are spoken with an "o" where the zero
+     * is ("1704" -> "seventeen o four"), so the leading zero is replaced with an
+     * "o": "1704" -> "17 o 4".
+     *
+     * ## Why not just every four-digit number?
+     *
+     * Scientific and everyday prose is full of non-year four-digit integers
+     * ("1836 times the mass", "a wavelength of 1216 Å", "1984 distinct words"),
+     * so rewriting every `\d{4}` would corrupt those readings. Instead we only
+     * rewrite when the surrounding context looks like a *year reference*, which
+     * is overwhelmingly signalled in historical prose by a small set of lead-in
+     * words ("in", "since", "around", "circa", "during", "AD", …) or by the
+     * number appearing immediately after an opening paren/comma (birth–death
+     * years such as "(1846)" or ", 1846,").
+     *
+     * ## Placement
+     *
+     * This runs *after* money and *before* units, so the lead-in-word guard is
+     * what actually protects measurements ("the road is 1984 km long" has no
+     * year lead-in word and is left alone by this stage).
+     */
+    private fun expandYears(text: String): String {
+        val year = Regex("""(?<!\d)(\d{4})(?!\d)""")
+        return year.replace(text) { m ->
+            val digits = m.groupValues[1]
+            val value = digits.toInt()
+            if (value !in minYear..maxYear) return@replace m.value
+
+            // Skip unambiguous non-year quantities: "1846 million", "1846 percent".
+            val after = text.substring(m.range.last + 1)
+            if (YEAR_NON_YEAR_SUFFIX.matchesAt(after, 0)) return@replace m.value
+
+            val before = text.substring(0, m.range.first)
+            if (isYearLeadIn(before) || isYearRangeStart(after)) toYearPairs(digits) else m.value
+        }
+    }
+
+    /** Minimum/maximum year rewritten by [expandYears]. */
+    private val minYear = 1100
+    private val maxYear = 1999
+
+    /**
+     * Words that, immediately before a four-digit number, mark it as a year.
+     * Kept deliberately narrow; notably *absent* are prepositions used for
+     * measurements ("of 1216 Å") and copulas ("is 1984").
+     */
+    private val YEAR_LEAD_IN_WORDS = setOf(
+        "in", "since", "until", "from", "around", "circa", "during", "between",
+        "before", "after", "by", "ad", "ce", "bc", "bce", "early", "late", "mid",
+        "to", "and", "or", "year", "years", "born", "died", "birth", "death",
+        "reigned"
+    )
+
+    /**
+     * Quantities a four-digit number can legitimately modify but which are never
+     * reasonably read as a year ("1846 million people").
+     */
+    private val YEAR_NON_YEAR_SUFFIX = Regex(
+        """\s*(million|billion|trillion|hundred|thousand|percent|times)"""
+    )
+
+    /**
+     * True when the run of letters immediately before the match is a year
+     * lead-in word, or when the match is preceded directly by an opening paren
+     * or comma (birth–death years "(1846)", ", 1846,").
+     */
+    private fun isYearLeadIn(before: String): Boolean {
+        // Immediate punctuation: "(1846" or ", 1846" / "; 1846".
+        if (before.endsWith("(") || before.endsWith(",") || before.endsWith(";")) {
+            return true
+        }
+        val word = yearLeadInWord(before) ?: return false
+        return word in YEAR_LEAD_IN_WORDS
+    }
+
+    /**
+     * True when [after] (the text following a four-digit number) begins a year
+     * range, e.g. " to 1918" or ", 1918" or " and 1918". Catches the *first*
+     * year of a range where the second year would otherwise be split but the
+     * first left bare ("1914–1918" becomes "1914 to 1918" by the earlier
+     * number-range rule, then "1914" has no natural lead-in word).
+     */
+    private fun isYearRangeStart(after: String): Boolean =
+        Regex("""\s*(?:to|through|and|or)\s+\d|\s*[,;-]\s*\d""").matchesAt(after, 0)
+
+    /** Returns the trailing word immediately before the match, lowercased, or null. */
+    private fun yearLeadInWord(before: String): String? {
+        val match = Regex("""([A-Za-z]+)\s*$""").find(before) ?: return null
+        return match.groupValues[1].lowercase()
+    }
+
+    /** Rewrites "1846" -> "18 46" and "1704" -> "17 o 4". */
+    private fun toYearPairs(digits: String): String {
+        val first = digits.substring(0, 2)
+        val second = digits.substring(2)
+        // "o" pronunciation applies to the 01..08 group ("17 o 4"), while 00
+        // ("1700") and 09 ("1809") are left as ordinary digit groups.
+        val useO = second[0] == '0' && second[1] in '1'..'8'
+        return if (useO) {
+            "$first o ${second[1]}"
+        } else {
+            "$first $second"
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────

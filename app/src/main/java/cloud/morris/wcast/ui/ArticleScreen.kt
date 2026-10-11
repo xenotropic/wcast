@@ -28,9 +28,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CenterFocusStrong
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Stop
@@ -143,8 +145,18 @@ private fun SearchBar(
         placeholder = { Text("Search Wikipedia") },
         singleLine = true,
         trailingIcon = {
-            IconButton(onClick = onSearch) {
-                Icon(imageVector = Icons.Filled.Search, contentDescription = "Search")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (query.isNotEmpty()) {
+                    IconButton(onClick = { onQueryChange("") }) {
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = "Clear search text"
+                        )
+                    }
+                }
+                IconButton(onClick = onSearch) {
+                    Icon(imageVector = Icons.Filled.Search, contentDescription = "Search")
+                }
             }
         },
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
