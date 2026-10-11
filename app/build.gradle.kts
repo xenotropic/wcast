@@ -1,3 +1,8 @@
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -16,6 +21,14 @@ android {
         // the pushed tag (e.g. `-PversionName=0.1`) so releases are labelled
         // correctly. See AGENTS.md for the project's versioning conventions.
         versionName = (project.findProperty("versionName") as? String) ?: "0.1"
+
+        // UTC timestamp of this build (ISO-8601), shown on the in-app About
+        // screen so a user's report can be matched to the exact APK they have.
+        // Regenerates on every build; that is intentional.
+        val buildTimeUtc = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
+            .apply { timeZone = TimeZone.getTimeZone("UTC") }
+            .format(Date())
+        buildConfigField("String", "BUILD_TIME_UTC", "\"$buildTimeUtc\"")
     }
 
     buildTypes {
@@ -39,6 +52,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     composeOptions {

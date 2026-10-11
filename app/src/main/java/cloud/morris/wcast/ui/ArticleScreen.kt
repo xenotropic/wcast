@@ -1,5 +1,6 @@
 package cloud.morris.wcast.ui
 
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -26,6 +27,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.Close
@@ -60,6 +62,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 import cloud.morris.wcast.ActivePosition
 import cloud.morris.wcast.MainViewModel
+import cloud.morris.wcast.SettingsActivity
 import cloud.morris.wcast.SpeakingState
 import cloud.morris.wcast.UiState
 import cloud.morris.wcast.data.ArticleParagraph
@@ -72,6 +75,7 @@ fun ArticleScreen(viewModel: MainViewModel = viewModel()) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val speakingState by viewModel.speakingState.collectAsStateWithLifecycle()
     val activePosition by viewModel.activePosition.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     // Survives across article loads; reset when a new article is opened below.
     val listState = rememberLazyListState()
@@ -102,7 +106,10 @@ fun ArticleScreen(viewModel: MainViewModel = viewModel()) {
             onPlayPause = viewModel::togglePause,
             onSkipBack = viewModel::skipBack,
             onSkipForward = viewModel::skipForward,
-            onStop = viewModel::stopSpeaking
+            onStop = viewModel::stopSpeaking,
+            onOpenSettings = {
+                context.startActivity(Intent(context, SettingsActivity::class.java))
+            }
         )
         HorizontalDivider()
         Box(
@@ -171,7 +178,8 @@ private fun PlayerBar(
     onPlayPause: () -> Unit,
     onSkipBack: () -> Unit,
     onSkipForward: () -> Unit,
-    onStop: () -> Unit
+    onStop: () -> Unit,
+    onOpenSettings: () -> Unit
 ) {
     val isActive = speakingState.isActive
     val isPaused = when (speakingState) {
@@ -225,6 +233,14 @@ private fun PlayerBar(
             Icon(
                 imageVector = Icons.Filled.Stop,
                 contentDescription = "Stop",
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+        // Settings gear, always available regardless of playback state.
+        IconButton(onClick = onOpenSettings) {
+            Icon(
+                imageVector = Icons.Filled.Settings,
+                contentDescription = "Settings",
                 tint = MaterialTheme.colorScheme.primary
             )
         }
