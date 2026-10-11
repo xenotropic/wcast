@@ -103,3 +103,56 @@ probes above (or just tell me which of the two "gap disappears when X" outcomes
 you see), I can turn the finding into a precise, minimal implementation.
 ==reply==
 It is only a paragraph breaks and it is proportionate to the size of the paragraph. However, it's always larger than any intra-paragraph pauses. So like I found one place where there's a list of things. They're all separate paragraphs. Every one of those has a two-second pause before it. Most larger paragraphs, kind of an average chunk of a history Wikipedia article, does take that five to seven seconds. Reading a title takes about two seconds, and then there'll be that  second chunk while it's loading up the next paragraph. Normally, I would just write this off to, well, it takes that long to start rendering, but it seems like there are no gaps of that length within any given paragraph, no matter how long they are. There will be one or two second breaks inside of a paragraph or a slightly awkward transition that sounds like it probably was a internal chunking being stuck together, but none of them are ever as long as five or seven seconds within any given paragraph, no matter the length. So it does sound like maybe your proposed fix would work. I am concerned about losing the ability to have per paragraph tracking, which seems like might be something related here, but you are closer to the code, so would know better than I am. I think both Kokoro and PocketTTS and probably most of the cloud providers are shielding themselves with chunking algorithms that all seem to work decently, so I'm less concerned about breaking any other engines by having longer chunks of text. 
+
+==Status Report: 2026-10-11 22:35 PDT== (research — no implementation)
+Your measurements settle it: the gap is (a) only at paragraph boundaries, (b)
+proportional to paragraph size, and (c) always longer than any intra-paragraph
+pause of any length. That is the textbook signature of *per-`speak()` synthesis
+warm-up* in Pocket TTS — the engine re-runs its encoder/model setup for every
+utterance, and the leading silence scales with how much it must synthesize before
+the first audio frame is ready. It is not Wcast's queueing (we already hand the
+engine every paragraph up front), and it is not Pocket TTS's internal sentence
+chunking (those mid-paragraph breaks are short, and never 5–7 s).
+
+So the fix is the one you suspected, and it is the `synthesizeToFile` look-ahead,
+NOT paragraph-merge — and that matters precisely because of the tracking concern
+you raised:
+
+  • Paragraph-merge (join adjacent paragraphs into one `speak()`) would remove
+    some gaps, but it *would* destroy per-paragraph tracking: several paragraphs
+    become one utterance, so `activePosition`/the left margin would only move at
+    the combined chunk's start, not per paragraph. You were right to worry.
+
+  • `synthesizeToFile` look-ahead keeps each paragraph its own utterance. We still
+    track and advance per paragraph exactly as today; we only *pre-render* the
+    next paragraph's audio to a file on a background thread while the current one
+    plays, then `addSpeech(file)` it the moment the current ends. Per-paragraph
+    `activePosition`, skip, pause/resume (re-queue-from-index), and the left
+    margin all keep working — the only thing that changes is the synthesis is done
+    ahead of time instead of live.
+
+Concrete plan for when you say go:
+  1. Keep a one-paragraph look-ahead. On utterance N start, kick off
+     `synthesizeToFile(paragraph N+1)` on a background thread into a cache dir
+     (app-internal), keyed by utterance id.
+  2. When N's onDone fires, `addSpeech(filepath, queueMode, params, id)` for the
+     pre-rendered N+1, then immediately start pre-rendering N+2. Fall back to
+     ordinary `speak()` if `synthesizeToFile` is unsupported or errors (so other
+     engines are unaffected — this is purely an optimization, never a regression).
+  3. Prune consumed files; clean the whole cache dir on teardown.
+
+Risks to weigh before implementing (none fatal, all engine-agnostic-safe if we
+keep the `speak()` fallback):
+  • Storage: ~one WAV per paragraph transiently; needs a small cache dir + low-
+    storage handling. (Can discard on the fly.)
+  • `synthesizeToFile` output may sound subtly different from live `speak`
+    (encoding/voice quality) — the one likely audible risk; worth a quick A/B on
+    Pocket TTS before committing to it.
+  • Concurrency complexity: background synthesis + callback ordering must slot
+    into the existing generation/currentIndex logic without racing the pause/
+    resume/skip paths.
+
+This stays a research ticket for now; I have not changed code. When you're ready,
+the smallest first step is a tiny probe (pre-render a single paragraph to file and
+`addSpeech` it) to confirm Pocket TTS's `synthesizeToFile` output is acceptable,
+then I build the look-ahead on top.

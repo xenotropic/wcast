@@ -89,3 +89,89 @@ Your questions
 (2) Yes, that sounds acceptable
 (3) I think you need to think about this a little more. I do like the idea of lazy inline, but look at the overall architecture and think about when it makes sense to do this. Could we do it immediately after article load for the entire article? This is maybe feature creep, but I'm wondering if we should do a text normalization render of the entire article after it loads. So like the article is fetched, it is displayed for the user, and then there's a normalized version that is generated in the background and cached for that specific article temporarily if it's not bookmarked or as part of the bookmark storage if it is. Because there's going to be a weight on Wikipedia API, which is outside of our control and Could be longer in other parts of the world, I'd rather not introduce this API-based normalization on a paragraph-by-paragraph basis. 
 This remains a research and planning task. 
+
+==Status Report: 2026-10-11 22:25 PDT== (research — no implementation)
+Answers to your three questions, as concretely as I can be honest about.
+
+(0) "Should we be smashing it to ASCII? Are we losing pronunciation info?"
+
+Short answer: the ASCII fold itself is not where we lose pronunciation. It is the
+*delivery path* (plain `TextToSpeech.speak(String)`) that has no way to act on
+pronunciation, so the Unicode we drop (é, č, å, ø, ç, …) would not actually help
+the named engines through that call even if we kept it.
+
+Quantification: this is data, not code, so retaining Unicode would NOT change APK
+size at all. The transliterate stage is a runtime string transform over already-
+Latin-dominant English Wikipedia prose; the marginal non-ASCII per article is a
+few KB of foreign names/terms. So "keeping Unicode grows the APK" is not a real
+cost — my earlier size concern was wrong in framing. The real trade-off is:
+  • Keep Unicode → we hold mora/letter-accent info, but the standard
+    `engine.speak(text)` path sends a bare string with no per-token locale/phoneme
+    params, so a grapheme like "é" reaches engines that do their own G2P and get
+    folded to "e" by them anyway (Kokoro/Pocket tokenize to a fixed phoneme-for-
+    letter vocabulary). Net gain: near zero.
+  • So the decision is not "ASCII vs Unicode" but "does the engine accept IPA via
+    SSML" — which is your question (1). If the answer is "only a narrow set", then
+    neither ASCII nor Unicode helps, and the only engine-agnostic output is an
+    ASCII *pronunciation respelling* (e.g. IPA → "vair-SIGH").
+
+Recommendation: keep the ASCII fold (it is what makes all our regex rules work on
+one clean alphabet), and spend the effort on stage 3's output encoding, not on
+retaining Unicode. Rejected Unicode-retention again, but for the *correct* reason
+this time (delivery path, not size).
+
+(1) Exactly which engines honor SSML / inline IPA? (what is that "narrow set")
+
+The platform surface is the issue. Android's `TextToSpeech` has NO first-class
+SSML. `speak(text, queueMode, params, utteranceId)` passes `text` to the engine
+verbatim; the only standardised knobs are a handful of `TextToSpeech.Engine.KEY_*`
+bundle extras (pitch/speech rate/volume/pan), none of which is "phoneme" or
+"IPA". There is also `synthesizeToFile` (some engines support a `KEY_PARAM_...`
+for output format, but again nothing standard for per-word phonemes).
+
+So "SSML/IPA via the standard API" is essentially undocumented, engine-specific
+territory:
+  • Some engines parse a subset of SSML (`<phoneme alphabet="ipa" ph="…">`, or
+    `<say-as>`) *inside the passed string* — notably eSpeak (honors IPA phonemes
+    and its own `[[…]]` syntax) and a few Linux-derived front-ends. Google's
+    network engine does NOT reliably honor inline IPA in `speak()`; it mostly
+    ignores `<phoneme>` markup in the text argument.
+  • Kokoro and Pocket TTS (local neural engines) expose their own text/SSML
+    handling, but their *Android* ports do not document a stable IPA-in-speak
+    contract through the platform `TextToSpeech` shim. Whether they honor
+    `<phoneme>` depends on the port's shim, not the model.
+  • The only portably-correct IPC for "synthesize this IPA to audio" is
+    `synthesizeToFile`/`addSpeech` with an engine that supports it — still
+    engine-specific and not guaranteed.
+
+Conclusion: inline IPA/SSML through `speak()` is a red herring for this app's
+current plain-text model; it would work for, at best, a narrow, undocumented,
+engine-specific set and break the moment the engine changes. That is exactly the
+"narrow set" I flagged. The robust, engine-agnostic stage-3 output is a plain-ASCII
+pronunciation respelling (pushed through the existing Normalizer pipeline), which
+works on every engine including the two you care about. If we ever want true IPA
+for a specific engine later, it is an opt-in per-engine knob, not v1.
+
+(2) Lazy inline vs. upfront full-article normalization (your post-load idea)
+
+Your instinct is right and it is *not* feature creep — it is the correct
+architecture given how SpeechController already works (it enqueues the whole
+article up front in one pass). Proposed shape:
+
+  • On article load, run the full normalization (and stage-1 foreign-word
+    detection) over the *entire article* once, in the background, as the article
+    is displayed. The normalizer is pure string transform (fast; no network).
+  • Stage-2 (IPA lookup for detected non-English words) becomes ONE batched
+    request for all unknown words, fired right after load, not per paragraph.
+    This directly removes the per-paragraph Wikimedia-weight concern.
+  • Cache the normalized text per article: transiently in memory (or a small
+    temp store) for un-bookmarked articles, and inside the bookmark store (ticket
+    11) for bookmarked ones — so re-listening never re-fetches or re-normalizes.
+
+This trades a small one-time delay on first open for zero per-paragraph latency
+and batched (not burst) API usage. Recommend we adopt it as the stage-2/3
+architecture. Still research — no code written.
+
+Open items still needing your call (unchanged from before, minus the resolved
+size question): confirm the pronunciation-*respelling* direction; and say the word
+on acceptable bundled-wordlist size (~1–3 MB) for offline stage-1 detection.
