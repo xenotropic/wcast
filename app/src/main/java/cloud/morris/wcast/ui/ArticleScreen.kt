@@ -358,7 +358,11 @@ private fun ArticleContent(
                                 SelectionContainer(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = heading,
-                                        style = MaterialTheme.typography.titleLarge,
+                                        style = if (section.level <= 2) {
+                                            MaterialTheme.typography.headlineSmall
+                                        } else {
+                                            MaterialTheme.typography.titleLarge
+                                        },
                                         fontWeight = FontWeight.Bold
                                     )
                                 }

@@ -6,6 +6,10 @@ package cloud.morris.wcast.data
  * @property id A stable, URL-safe identifier for the section
  *   ("lead" for the intro, otherwise a slugified heading).
  * @property heading The section heading, or null for the introductory lead section.
+ * @property level The heading's HTML heading level (h2 = 2 … h6 = 6), with the
+ *   lead section using level 1 (a sentinel that is always shallower than any
+ *   real heading). Used to reconstruct the article's heading hierarchy so that
+ *   playing a major heading also reads its subheadings.
  * @property paragraphs The cleaned paragraph text belonging to the section, each
  *   carrying its internal wiki links (for display/navigation) alongside the
  *   plain text (for TTS).
@@ -13,6 +17,7 @@ package cloud.morris.wcast.data
 data class ArticleSection(
     val id: String,
     val heading: String?,
+    val level: Int,
     val paragraphs: List<ArticleParagraph>
 )
 
@@ -60,4 +65,27 @@ sealed interface SearchResult {
 
     /** There was no exact match; a list of suggestions is returned instead. */
     data class Suggestions(val items: List<SearchSuggestion>) : SearchResult
+}
+
+/**
+ * Returns the contiguous subtree rooted at the section with [rootId] in [sections].
+ *
+ * A section's subtree is the section itself plus every immediately-following
+ * section whose heading level is strictly deeper than the root's level, stopping
+ * at the first section whose level is equal to or shallower than the root's.
+ * This is what makes "play on a major heading" read the heading together with
+ * all of its subheadings, in order.
+ *
+ * Returns an empty list when [rootId] is not present in [sections].
+ */
+fun subtreeOf(sections: List<ArticleSection>, rootId: String): List<ArticleSection> {
+    val rootIndex = sections.indexOfFirst { it.id == rootId }
+    if (rootIndex < 0) return emptyList()
+    val root = sections[rootIndex]
+    val result = mutableListOf(root)
+    for (next in sections.drop(rootIndex + 1)) {
+        if (next.level <= root.level) break
+        result += next
+    }
+    return result
 }

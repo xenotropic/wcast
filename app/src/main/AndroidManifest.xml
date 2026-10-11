@@ -27,6 +27,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Receives ACTION_MEDIA_BUTTON broadcasts so wired/Bluetooth headset
+             presses reach the active MediaSession as a broadcast, even when the
+             in-process session callback path races against other media apps. -->
+        <receiver
+            android:name=".tts.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

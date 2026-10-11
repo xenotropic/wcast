@@ -7,6 +7,8 @@ import cloud.morris.wcast.data.ArticleSection
 import cloud.morris.wcast.data.SearchResult
 import cloud.morris.wcast.data.SearchSuggestion
 import cloud.morris.wcast.data.WikipediaRepository
+import cloud.morris.wcast.data.subtreeOf
+import cloud.morris.wcast.tts.MediaButtonHandler
 import cloud.morris.wcast.tts.SpeechController
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -74,6 +76,8 @@ class MainViewModel : AndroidViewModel {
 
     private val speechController = SpeechController(getApplication<Application>())
 
+    private val mediaButtonHandler = MediaButtonHandler(getApplication<Application>())
+
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
 
@@ -94,6 +98,7 @@ class MainViewModel : AndroidViewModel {
         speechController.onStreamDone = {
             _speakingState.value = SpeakingState.None
             _activePosition.value = null
+            mediaButtonHandler.onPlaybackStopped()
         }
         // Track which section is actively being spoken so skips highlighting and
         // per-section affordances stay accurate during whole-article playback.
@@ -106,6 +111,10 @@ class MainViewModel : AndroidViewModel {
             }
             _activePosition.value = ActivePosition(sectionId, utterance.paragraphIndex)
         }
+        // A press of the wired/Bluetooth headset "main" button stops speech.
+        mediaButtonHandler.onMainButtonPressed = { stopSpeaking() }
+        // Losing audio focus (call, or another app taking over) also stops speech.
+        mediaButtonHandler.onFocusLost = { stopSpeaking() }
     }
 
     fun onQueryChanged(text: String) {
@@ -172,13 +181,14 @@ class MainViewModel : AndroidViewModel {
         stopSpeaking()
         speechController.speakArticle(state.title, state.sections)
         _speakingState.value = SpeakingState.WholeArticle
+        mediaButtonHandler.onPlaybackStarted()
     }
 
     /** Reads a single section by its id, or stops if it is already playing. */
     fun playSection(id: String) {
         val state = _uiState.value
         if (state !is UiState.Article) return
-        val section = state.sections.firstOrNull { it.id == id } ?: return
+        if (state.sections.none { it.id == id }) return
 
         val current = _speakingState.value
         if (current == SpeakingState.Section(id)) {
@@ -190,8 +200,12 @@ class MainViewModel : AndroidViewModel {
             return
         }
         stopSpeaking()
-        speechController.speakSection(section)
+        // Playing a heading reads its whole subtree: the section itself plus any
+        // deeper following sections (its subheadings), in document order. Leaf
+        // sections simply resolve to themselves.
+        speechController.speakSections(subtreeOf(state.sections, id))
         _speakingState.value = SpeakingState.Section(id)
+        mediaButtonHandler.onPlaybackStarted()
     }
 
     /** Stops any ongoing speech and clears the speaking state. */
@@ -199,6 +213,7 @@ class MainViewModel : AndroidViewModel {
         speechController.stop()
         _speakingState.value = SpeakingState.None
         _activePosition.value = null
+        mediaButtonHandler.onPlaybackStopped()
     }
 
     /** Pauses the current playback in place (resume restarts the current chunk). */
@@ -217,6 +232,7 @@ class MainViewModel : AndroidViewModel {
         // Pause is "stop-like" (resume restarts the current chunk), so the
         // reading indicator disappears while paused, mirroring that behavior.
         _activePosition.value = null
+        mediaButtonHandler.onPlaybackPaused()
     }
 
     /** Resumes paused playback from the chunk that was current when paused. */
@@ -232,6 +248,8 @@ class MainViewModel : AndroidViewModel {
             }
             else -> Unit
         }
+        // Re-acquire focus (it may have been abandoned) and mark as playing.
+        mediaButtonHandler.onPlaybackStarted()
     }
 
     /** Toggles between paused and playing for the current stream. */
@@ -269,10 +287,13 @@ class MainViewModel : AndroidViewModel {
                 val index = state.sections.indexOfFirst { it.id == current.id }
                 if (index < 0) return
                 val target = state.sections.getOrNull(index + delta) ?: return
-                // Reuse playSection so the single-section playback path (stop +
-                // speakSection + state) is identical to tapping the neighbour's
-                // play button — the behavior the skip buttons are meant to mirror.
-                playSection(target.id)
+                // Skip steps one flat section at a time (mirroring the keyboard
+                // next/previous affordance), so it speaks exactly the neighbouring
+                // section rather than expanding it into its subtree the way the
+                // play button does.
+                stopSpeaking()
+                speechController.speakSection(target)
+                _speakingState.value = SpeakingState.Section(target.id)
             }
 
             SpeakingState.None -> Unit
@@ -287,6 +308,7 @@ class MainViewModel : AndroidViewModel {
 
     override fun onCleared() {
         speechController.shutdown()
+        mediaButtonHandler.release()
         super.onCleared()
     }
 }

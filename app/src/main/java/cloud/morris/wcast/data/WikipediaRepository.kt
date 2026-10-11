@@ -96,18 +96,21 @@ class WikipediaRepository {
     private fun structureSections(content: Element): List<ArticleSection> {
         val sections = mutableListOf<ArticleSection>()
         var heading: String? = null
+        var level = LEAD_LEVEL
         var paragraphs = mutableListOf<ArticleParagraph>()
         var inAppendix = false
 
         fun flush() {
             if (heading != null || paragraphs.isNotEmpty()) {
                 sections += ArticleSection(
-                    id = sectionId(heading, sections.size),
+                    id = sectionId(heading, sections),
                     heading = heading,
+                    level = level,
                     paragraphs = paragraphs.toList()
                 )
             }
             heading = null
+            level = LEAD_LEVEL
             paragraphs = mutableListOf()
         }
 
@@ -124,6 +127,7 @@ class WikipediaRepository {
                         }
                         flush()
                         heading = cleanText(child.text())
+                        level = headingLevel(child.tagName())
                     }
                     "p" -> paragraph(child, bullet = null)?.let { paragraphs += it }
                     "li" -> paragraph(child, bullet = "\u2022 ")?.let { paragraphs += it }
@@ -135,6 +139,16 @@ class WikipediaRepository {
         visit(content)
         flush()
         return sections
+    }
+
+    /** Maps an HTML heading tag name to its numeric level (h2 -> 2 … h6 -> 6). */
+    private fun headingLevel(tagName: String): Int = when (tagName) {
+        "h2" -> 2
+        "h3" -> 3
+        "h4" -> 4
+        "h5" -> 5
+        "h6" -> 6
+        else -> LEAD_LEVEL
     }
 
     /**
@@ -181,14 +195,31 @@ class WikipediaRepository {
         return withoutEmptyBrackets.replace(WHITESPACE_REGEX, " ").trim().ifEmpty { null }
     }
 
-    private fun sectionId(heading: String?, index: Int): String {
+    /**
+     * Builds a stable, unique section id. For the lead (no heading) this is the
+     * fixed literal "lead". Otherwise the heading is slugified, and if that slug
+     * (or its fallback) would collide with an id already emitted for an earlier
+     * section, an `-<index>` suffix is appended so every section's id is unique.
+     * Uniqueness matters because ids are the keys used by playback, skip, and
+     * the active-position indicator.
+     */
+    private fun sectionId(heading: String?, sections: List<ArticleSection>): String {
         if (heading == null) return "lead"
         val slug = heading.lowercase()
             .map { if (it.isLetterOrDigit()) it else '-' }
             .joinToString(separator = "")
             .replace(Regex("-+"), "-")
             .trim('-')
-        return slug.ifEmpty { "section-$index" }
+        val base = slug.ifEmpty { "section" }
+
+        val used = sections.mapTo(mutableSetOf()) { it.id }
+        var candidate = base
+        var n = sections.size // ensure a fresh suffix that can't equal a prior id
+        while (candidate in used) {
+            candidate = "$base-$n"
+            n++
+        }
+        return candidate
     }
 
     companion object {
@@ -197,6 +228,9 @@ class WikipediaRepository {
         private const val ARTICLE_CONTENT_SELECTOR = "#mw-content-text"
         private const val DEFAULT_TIMEOUT_MS = 15_000
         private const val USER_AGENT = "Wcast/1.0 (Android; Wikipedia reader)"
+
+        /** Heading level used for the lead (no-heading) section; shallower than h2. */
+        private const val LEAD_LEVEL = 1
 
         /** CSS selectors for DOM nodes removed before display (Phase 1 scrub list). */
         private val SCRUB_SELECTORS = listOf(

@@ -145,29 +145,29 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
     fun speakArticle(title: String, sections: List<ArticleSection>) {
         val utterances = buildList {
             add(Utterance(sectionId = null, paragraphIndex = null, text = title))
-            sections.forEach { s ->
-                s.heading?.let {
-                    add(Utterance(sectionId = s.id, paragraphIndex = null, text = it))
-                }
-                s.paragraphs.forEachIndexed { index, p ->
-                    add(Utterance(sectionId = s.id, paragraphIndex = index, text = p.text))
-                }
-            }
+            sections.forEach { s -> addSectionUtterances(s, this) }
         }
         start(utterances)
     }
 
     /** Speaks a single [ArticleSection] (heading + paragraphs). */
     fun speakSection(section: ArticleSection) {
-        val utterances = buildList {
-            section.heading?.let {
-                add(Utterance(sectionId = section.id, paragraphIndex = null, text = it))
-            }
-            section.paragraphs.forEachIndexed { index, p ->
-                add(Utterance(sectionId = section.id, paragraphIndex = index, text = p.text))
-            }
+        start(buildList { addSectionUtterances(section, this) })
+    }
+
+    /** Speaks an ordered list of [ArticleSection]s as one continuous stream. */
+    fun speakSections(sections: List<ArticleSection>) {
+        start(buildList { sections.forEach { s -> addSectionUtterances(s, this) } })
+    }
+
+    /** Appends a section's heading and paragraph utterances, in order. */
+    private fun addSectionUtterances(section: ArticleSection, dest: MutableList<Utterance>) {
+        section.heading?.let {
+            dest.add(Utterance(sectionId = section.id, paragraphIndex = null, text = it))
         }
-        start(utterances)
+        section.paragraphs.forEachIndexed { index, p ->
+            dest.add(Utterance(sectionId = section.id, paragraphIndex = index, text = p.text))
+        }
     }
 
     private fun start(utterances: List<Utterance>) {

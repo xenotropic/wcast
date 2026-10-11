@@ -23,16 +23,19 @@ class IndexForTest {
         ArticleSection(
             id = "lead",
             heading = null,
+            level = 1,
             paragraphs = listOf(paragraph("l0"), paragraph("l1"))
         ),
         ArticleSection(
             id = "history",
             heading = "History",
+            level = 2,
             paragraphs = listOf(paragraph("h0"))
         ),
         ArticleSection(
             id = "legacy",
             heading = "Legacy",
+            level = 2,
             paragraphs = listOf(paragraph("g0"), paragraph("g1"), paragraph("g2"))
         )
     )
