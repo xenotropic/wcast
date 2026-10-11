@@ -127,6 +127,18 @@ class NormalizerTest {
     }
 
     @Test
+    fun `expands solar mass symbol`() {
+        assertEquals("8 solar masses black hole", normalizer.normalize("8 M☉ black hole"))
+        assertEquals("108 solar masses black hole", normalizer.normalize("108 M☉ black hole"))
+    }
+
+    @Test
+    fun `expands hertz after a number`() {
+        assertEquals("8 to 25 hertz", normalizer.normalize("8 to 25 Hz"))
+        assertEquals("60 hertz", normalizer.normalize("60 Hz"))
+    }
+
+    @Test
     fun `does not expand m when followed by a word`() {
         assertEquals("a 5 m tall building", normalizer.normalize("a 5 m tall building"))
     }

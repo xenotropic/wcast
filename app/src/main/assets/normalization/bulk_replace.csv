@@ -14,4 +14,7 @@ Blvd.,Boulevard
 World War II,World War Two
 World War I,World War One
 pH value,p h value
+# Astronomical solar-mass symbol "M☉" reads as "meters" + an unspoken sun
+# glyph; replace it with "solar masses" before the units stage can mangle "M".
+M☉,solar masses
 

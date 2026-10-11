@@ -393,6 +393,7 @@ class Normalizer(private val rules: NormalizationRules) {
         put("km/h", "kilometers per hour"); put("mph", "miles per hour")
         put("km2", "square kilometers"); put("m2", "square meters")
         put("kg", "kilograms")
+        put("Hz", "hertz")    // e.g. "25 Hz" -> "25 hertz" (frequency; unambiguous)
         put("in", "inches")   // e.g. "25.2 in" -> "25.2 inches" (decimal-safe)
         put("m", "meters")    // e.g. "5 m" -> "5 meters"
     }

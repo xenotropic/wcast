@@ -63,4 +63,62 @@ trigger, outputting a ranked list of proposed rules with confidence + a
 before/after diff for each, which you approve (or not) and which I then fold into
 the rule assets + tests. Still research — nothing implemented this pass.
 ==reply==
-This sounds good. Why don't you try doing that for a couple of articles, say, Blue Whale and Black Hole, and see what rules you come up with. I think it's important to remember that the process is already broken in the sense that there's things that are already being said wrong, so I wouldn't be too afraid of breaking it further, and we can always unbreak it later. As you say, this is just a continuous evolution of trying to reduce exceptions to make it less broken over time. (Eventually, this will probably all be superseded by models that are big enough to normalize everything, but for right now these littler models can't. So we're trying to do it as much as we can on phone hardware.) Like, if I come back to you later with things that sound wrong, it should be relatively easy to look through the regex and see which one caused it. So let's put like a 90% confidence threshold. If you think you've got a rule that is 90% likely to be better than existing, go ahead and just implement it. And then for the ones that you're like, maybe, but not sure. Put those <90% confidence ones in here in the ticket, and I'll review them. 
+This sounds good. Why don't you try doing that for a couple of articles, say, Blue Whale and Black Hole, and see what rules you come up with. I think it's important to remember that the process is already broken in the sense that there's things that are already being said wrong, so I wouldn't be too afraid of breaking it further, and we can always unbreak it later. As you say, this is just a continuous evolution of trying to reduce exceptions to make it less broken over time. (Eventually, this will probably all be superseded by models that are big enough to normalize everything, but for right now these littler models can't. So we're trying to do it as much as we can on phone hardware.) Like, if I come back to you later with things that sound wrong, it should be relatively easy to look through the regex and see which one caused it. So let's put like a 90% confidence threshold. If you think you've got a rule that is 90% likely to be better than existing, go ahead and just implement it. And then for the ones that you're like, maybe, but not sure. Put those <90% confidence ones in here in the ticket, and I'll review them.
+
+==Status Report: 2026-10-11 22:10 PDT==
+Ran the actual `Normalizer.normalize()` over the real fetched text of "Blue whale"
+and "Black hole" (Wikipedia `prop=extracts&explaintext`, the same source the app
+reads), diffed input vs. output, and reviewed the deltas. Two ≥90%-confidence
+rules were IMPLEMENTED; the rest are listed below for your review.
+
+IMPLEMENTED (≥90%):
+
+1. Solar-mass symbol `M☉` (U+2609). This was a real regression: the units stage
+   expanded the "M" to "meters" and left the ☉ glyph unspoken, so "8 M☉ black
+   hole" came out as "8 meters☉ black hole" — and this recurs throughout any
+   astronomy article (18 occurrences in Black hole alone). Fix: added
+   `M☉,solar masses` to `bulk_replace.csv` (stage 2, so it is applied before
+   the units stage can mangle the "M"). "8 M☉" → "8 solar masses".
+
+2. `Hz` (hertz). "8 to 25 Hz" was left literal (engines read the letters). `Hz`
+   is unambiguous, so I added `Hz → hertz` to the `UNIT_WORDS` map (same
+   `(?<=\d)` guard as the other units). "25 Hz" → "25 hertz". "MHz"/"kHz" are
+   intentionally NOT matched (the "M"/"k" prefix blocks the match) — noted below.
+
+Both were verified with new unit tests in `NormalizerTest`; `testDebugUnitTest`
+and `assembleDebug` pass.
+
+<90% CANDIDATES (list for your review — NOT implemented):
+
+a. `t` for tonnes. "190–200 t" keeps a bare "t" (the "t" unit is too common and
+   would collide with words like "t" in "t-shirt"). Would need a same-suffix
+   guard as "m"/"in". Medium-high value for the Blue whale article specifically.
+
+b. `kHz` / `MHz` frequency prefixes. "25 MHz" stays literal. Low priority, rare
+   in prose, and "MHz" is often read acceptably as letters.
+
+c. `A*` as "A-star" ("Sagittarius A*"). Reads as "A asterisk" or "A star"
+   inconsistently. I did NOT implement a global rule because `*` is used
+   generically elsewhere (footnotes, multiplication) and a global replace is
+   risky. Could be a targeted token rule ("(letter)A*" → "letter star").
+
+d. Scientific notation rendered as "10−5" (U+2212 minus) currently → "10 minus
+   5 grams", which should be "10 to the minus 5 grams". Hard to distinguish from
+   genuine subtraction; leaving for now.
+
+e. Foreign proper nouns / names: "blåhval" → "blahval", "Zajaček" → "Zajacek".
+   These are expected outcomes of the ASCII stage and are really ticket 14's
+   domain (foreign-word pronunciation), not a normalization bug per se.
+
+f. En-dash inside compound words reads as a pause: "mother–calf bonds" → "mother,
+   calf bonds". Acceptable-ish but a hyphen/en-dash *between two lowercase words*
+   is usually a compound, not a dash pause. Could special-case "word–word" (no
+   spaces) to remove the pause.
+
+Observation (not a rule): the diff is dominated by noise from the *plaintext
+extract* (LaTeX math `{\displaystyle ...}`, `== Heading ==` markers, reference
+sections). None of that reaches the app in practice because the real pipeline
+scrubs those DOM nodes first, so I ignored it. Your on-device listening remains
+the authoritative check for anything subjective.
+
+This is a recurring pass I can rerun with different articles whenever you want. 
