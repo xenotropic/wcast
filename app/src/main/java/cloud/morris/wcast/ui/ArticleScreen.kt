@@ -395,12 +395,29 @@ private fun ArticleContent(
 ) {
     val isTitleActive = activePosition?.sectionId == null
 
-    LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
+    // Top-level (h2 / level 2) sections with a heading. When there are more
+    // than three, show a "Contents" outline at the top that jumps to each one.
+    val topLevelHeadings = sections.filter { it.heading != null && it.level == 2 }
+    val showOutline = topLevelHeadings.size > 3
+    val scope = rememberCoroutineScope()
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        if (showOutline) {
+            ContentsOutline(topLevelHeadings) { section ->
+                val index = indexFor(title, sections, ActivePosition(section.id, null))
+                if (index != null) {
+                    // Scroll the article so the chosen heading is at the top.
+                    scope.launch { listState.animateScrollToItem(index, scrollOffset = 0) }
+                }
+            }
+        }
+
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
         item(key = "title") {
             ArticleRow(
                 isActive = isTitleActive,
@@ -477,6 +494,48 @@ private fun ArticleContent(
                     )
                 }
             }
+        }
+    }
+    }
+}
+
+/**
+ * A compact, tap-to-jump "Contents" list shown at the top of long articles
+ * (those with more than three top-level h2 headings). Each row is a heading;
+ * tapping it scrolls the article so that heading is at the top. No play
+ * controls here by design — the user jumps first, then presses the play button
+ * beside the heading.
+ */
+@Composable
+private fun ContentsOutline(
+    topLevelHeadings: List<ArticleSection>,
+    onSelect: (ArticleSection) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        Text(
+            text = "Contents",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        topLevelHeadings.forEach { section ->
+            Text(
+                text = section.heading ?: return@forEach,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSelect(section) }
+                    .padding(vertical = 6.dp)
+            )
         }
     }
 }

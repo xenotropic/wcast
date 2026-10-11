@@ -63,7 +63,7 @@ class SettingsActivity : ComponentActivity() {
                     SettingsScreen(
                         versionName = BuildConfig.VERSION_NAME,
                         versionCode = BuildConfig.VERSION_CODE,
-                        buildTimeUtc = BuildConfig.BUILD_TIME_UTC,
+                        buildTimePt = BuildConfig.BUILD_TIME_PT,
                         onBack = { finish() },
                         onOpenTtsSettings = ::openTtsSettings
                     )
@@ -99,7 +99,7 @@ class SettingsActivity : ComponentActivity() {
 private fun SettingsScreen(
     versionName: String,
     versionCode: Int,
-    buildTimeUtc: String,
+    buildTimePt: String,
     onBack: () -> Unit,
     onOpenTtsSettings: () -> Unit
 ) {
@@ -147,7 +147,7 @@ private fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
             SettingsSection(title = "About")
-            AboutBlock(versionName, versionCode, buildTimeUtc)
+            AboutBlock(versionName, versionCode, buildTimePt)
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
@@ -198,7 +198,7 @@ private fun SettingsRow(
 }
 
 @Composable
-private fun AboutBlock(versionName: String, versionCode: Int, buildTimeUtc: String) {
+private fun AboutBlock(versionName: String, versionCode: Int, buildTimePt: String) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -250,7 +250,7 @@ private fun AboutBlock(versionName: String, versionCode: Int, buildTimeUtc: Stri
 
         AboutDetail("Version", versionName)
         AboutDetail("Version code", versionCode.toString())
-        AboutDetail("Build (UTC)", buildTimeUtc)
+        AboutDetail("Build (Pacific)", buildTimePt)
     }
 }
 

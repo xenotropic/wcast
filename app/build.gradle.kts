@@ -22,13 +22,15 @@ android {
         // correctly. See AGENTS.md for the project's versioning conventions.
         versionName = (project.findProperty("versionName") as? String) ?: "0.4"
 
-        // UTC timestamp of this build (ISO-8601), shown on the in-app About
-        // screen so a user's report can be matched to the exact APK they have.
-        // Regenerates on every build; that is intentional.
-        val buildTimeUtc = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
-            .apply { timeZone = TimeZone.getTimeZone("UTC") }
+        // Timestamp of this build (ISO-8601, America/Los_Angeles i.e. Pacific
+        // time), shown on the in-app About screen so a user's report can be
+        // matched to the exact APK they have. Regenerates on every build; that is
+        // intentional. NB: keep this in sync with versionName when cutting a
+        // release — see the reminder in AGENTS.md.
+        val buildTimePt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss z", Locale.US)
+            .apply { timeZone = TimeZone.getTimeZone("America/Los_Angeles") }
             .format(Date())
-        buildConfigField("String", "BUILD_TIME_UTC", "\"$buildTimeUtc\"")
+        buildConfigField("String", "BUILD_TIME_PT", "\"$buildTimePt\"")
     }
 
     buildTypes {

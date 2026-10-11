@@ -39,6 +39,13 @@ this project is versioned, built, and committed.
 - `app/build.gradle.kts` defaults `versionName` to `0.1`. CI overrides it from
   the pushed tag (`-PversionName=<tag without the leading "v">`).
 - `versionCode` is currently hardcoded to `1`.
+- **Keep the build identity in sync (IMPORTANT).** The in-app About screen
+  (`SettingsActivity`) shows both a version tag and a build timestamp
+  (generated as `BuildConfig.BUILD_TIME_PT`, in `America/Los_Angeles` time).
+  Whenever you change the version, make sure the build produces a *fresh*
+  timestamp and that the `versionName` matches the intended tag, so the About
+  screen never reports a stale version/time and you can always confirm a given
+  APK was built from the expected tag.
 
 ## Releasing (a quick reference for when instructed)
 
