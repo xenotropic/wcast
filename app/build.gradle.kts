@@ -20,7 +20,7 @@ android {
         // Defaults to 0.1 for local/pre-release builds. CI overrides this with
         // the pushed tag (e.g. `-PversionName=0.1`) so releases are labelled
         // correctly. See AGENTS.md for the project's versioning conventions.
-        versionName = (project.findProperty("versionName") as? String) ?: "0.1"
+        versionName = (project.findProperty("versionName") as? String) ?: "0.4"
 
         // UTC timestamp of this build (ISO-8601), shown on the in-app About
         // screen so a user's report can be matched to the exact APK they have.
