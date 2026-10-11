@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -48,7 +49,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -81,17 +85,47 @@ fun ArticleScreen(viewModel: MainViewModel = viewModel()) {
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
 
-    val onJumpToCurrent: () -> Unit = jump@{
-        val state = uiState as? UiState.Article ?: return@jump
-        val index = indexFor(state.title, state.sections, activePosition) ?: return@jump
-        scope.launch { listState.animateScrollToItem(index) }
+    // Follow mode: while true, the view auto-scrolls so the currently-read
+    // paragraph stays pinned to the top. Entered by tapping "jump to current"
+    // or pressing play; left by any manual scroll (drag) gesture.
+    var followReading by remember { mutableStateOf(false) }
+
+    // Detects user-initiated scrolling. Programmatic scrolls (scrollToItem /
+    // animateScrollToItem) do NOT emit drag interactions, so a real finger drag
+    // is the only thing that sets this off — exactly what we want for exiting
+    // follow mode.
+    LaunchedEffect(listState) {
+        listState.interactionSource.interactions.collect { interaction ->
+            if (interaction is DragInteraction.Start) {
+                followReading = false
+            }
+        }
+    }
+
+    fun scrollToCurrentTop() {
+        val state = uiState as? UiState.Article ?: return
+        val index = indexFor(state.title, state.sections, activePosition) ?: return
+        followReading = true
+        scope.launch { listState.animateScrollToItem(index, scrollOffset = 0) }
+    }
+
+    // While following, keep the currently-read paragraph pinned to the top as
+    // the reading position advances.
+    LaunchedEffect(activePosition, followReading) {
+        if (!followReading) return@LaunchedEffect
+        val state = uiState as? UiState.Article ?: return@LaunchedEffect
+        val index = indexFor(state.title, state.sections, activePosition) ?: return@LaunchedEffect
+        listState.animateScrollToItem(index, scrollOffset = 0)
     }
 
     // Reset scroll when a different article is opened so a stale offset from the
     // previous (possibly much longer/shorter) article is never kept.
     val articleTitle = (uiState as? UiState.Article)?.title
     LaunchedEffect(articleTitle) {
-        if (articleTitle != null) listState.scrollToItem(0)
+        if (articleTitle != null) {
+            followReading = false
+            listState.scrollToItem(0)
+        }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -102,7 +136,7 @@ fun ArticleScreen(viewModel: MainViewModel = viewModel()) {
         )
         PlayerBar(
             speakingState = speakingState,
-            onJumpToCurrent = onJumpToCurrent,
+            onJumpToCurrent = ::scrollToCurrentTop,
             onPlayPause = viewModel::togglePause,
             onSkipBack = viewModel::skipBack,
             onSkipForward = viewModel::skipForward,
@@ -127,8 +161,14 @@ fun ArticleScreen(viewModel: MainViewModel = viewModel()) {
                     speakingState = speakingState,
                     activePosition = activePosition,
                     listState = listState,
-                    onPlayWholeArticle = viewModel::playWholeArticle,
-                    onPlaySection = viewModel::playSection,
+                    onPlayWholeArticle = {
+                        followReading = true
+                        viewModel.playWholeArticle()
+                    },
+                    onPlaySection = { id ->
+                        followReading = true
+                        viewModel.playSection(id)
+                    },
                     onLinkClick = viewModel::openArticle
                 )
                 is UiState.Error -> ErrorMessage(state.message)
@@ -190,54 +230,66 @@ private fun PlayerBar(
 
     // The bar is always visible (fixed height) so the page never reflows; when
     // nothing is playing the controls are simply disabled.
-    Row(
+    //
+    // Layout: the "where am I" control is pinned to the left edge and the
+    // settings gear to the right edge; the four transport controls sit in a
+    // cluster centered between them.
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(48.dp)
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
     ) {
-        // "Where am I?" control, pinned to the left edge so it reads as a
-        // separate concern from the transport cluster that follows.
-        IconButton(onClick = onJumpToCurrent, enabled = isActive) {
+        IconButton(
+            onClick = onJumpToCurrent,
+            enabled = isActive,
+            modifier = Modifier.align(Alignment.CenterStart)
+        ) {
             Icon(
                 imageVector = Icons.Filled.CenterFocusStrong,
                 contentDescription = "Jump to current reading position",
                 tint = MaterialTheme.colorScheme.primary
             )
         }
-        Spacer(modifier = Modifier.weight(1f))
-        IconButton(onClick = onSkipBack, enabled = isActive) {
-            Icon(
-                imageVector = Icons.Filled.SkipPrevious,
-                contentDescription = "Previous section",
-                tint = MaterialTheme.colorScheme.primary
-            )
-        }
-        IconButton(onClick = onPlayPause, enabled = isActive) {
-            Icon(
-                imageVector = if (isActive && !isPaused) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                contentDescription = if (isActive && !isPaused) "Pause" else "Play",
-                tint = MaterialTheme.colorScheme.primary
-            )
-        }
-        IconButton(onClick = onSkipForward, enabled = isActive) {
-            Icon(
-                imageVector = Icons.Filled.SkipNext,
-                contentDescription = "Next section",
-                tint = MaterialTheme.colorScheme.primary
-            )
-        }
-        IconButton(onClick = onStop, enabled = isActive) {
-            Icon(
-                imageVector = Icons.Filled.Stop,
-                contentDescription = "Stop",
-                tint = MaterialTheme.colorScheme.primary
-            )
+        Row(
+            modifier = Modifier.align(Alignment.Center),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onSkipBack, enabled = isActive) {
+                Icon(
+                    imageVector = Icons.Filled.SkipPrevious,
+                    contentDescription = "Previous section",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+            IconButton(onClick = onPlayPause, enabled = isActive) {
+                Icon(
+                    imageVector = if (isActive && !isPaused) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    contentDescription = if (isActive && !isPaused) "Pause" else "Play",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+            IconButton(onClick = onSkipForward, enabled = isActive) {
+                Icon(
+                    imageVector = Icons.Filled.SkipNext,
+                    contentDescription = "Next section",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+            IconButton(onClick = onStop, enabled = isActive) {
+                Icon(
+                    imageVector = Icons.Filled.Stop,
+                    contentDescription = "Stop",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
         }
         // Settings gear, always available regardless of playback state.
-        IconButton(onClick = onOpenSettings) {
+        IconButton(
+            onClick = onOpenSettings,
+            modifier = Modifier.align(Alignment.CenterEnd)
+        ) {
             Icon(
                 imageVector = Icons.Filled.Settings,
                 contentDescription = "Settings",

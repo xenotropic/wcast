@@ -2,10 +2,12 @@ package cloud.morris.wcast
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -31,7 +33,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import cloud.morris.wcast.ui.theme.WcastTheme
 
@@ -236,6 +242,7 @@ private fun AboutBlock(versionName: String, versionCode: Int, buildTimeUtc: Stri
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        RepositoryLink()
 
         Spacer(modifier = Modifier.height(8.dp))
         HorizontalDivider()
@@ -263,6 +270,54 @@ private fun AboutDetail(label: String, value: String) {
             modifier = Modifier.weight(1f)
         )
     }
+}
+
+/**
+ * A short "issues, feedback, or comments?" line with the repository URL
+ * rendered as a tappable link. On tap it opens the repository in the browser
+ * via an ACTION_VIEW intent.
+ */
+@Composable
+private fun RepositoryLink() {
+    val context = LocalContext.current
+    val repoUrl = "https://github.com/xenotropic/wcast"
+
+    val annotated = buildAnnotatedString {
+        pushStyle(
+            SpanStyle(
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        )
+        append("Issues, feedback, or comments? Visit ")
+        pop()
+        pushStringAnnotation(tag = "URL", annotation = repoUrl)
+        pushStyle(
+            SpanStyle(
+                color = MaterialTheme.colorScheme.primary,
+                textDecoration = TextDecoration.Underline,
+            )
+        )
+        append(repoUrl)
+        pop()
+        pop()
+    }
+
+    ClickableText(
+        text = annotated,
+        style = MaterialTheme.typography.bodyMedium,
+        onClick = { offset ->
+            annotated
+                .getStringAnnotations("URL", offset, offset)
+                .firstOrNull()
+                ?.let { link ->
+                    runCatching {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, Uri.parse(link.item))
+                        )
+                    }
+                }
+        }
+    )
 }
 
 
