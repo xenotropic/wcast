@@ -1,1 +1,66 @@
 This is for now a research project, nothing to implement. I'm wondering if you can think through your own capabilities in just reading Wikipedia articles, running them through the existing normalization pipeline that's within this app, and then reviewing the outgoing text for things that don't look like they've been normalized properly. Like you're a large model, so you should have the ability to look at that outputted text and compare it to the inputted text and find things that still look like they're not going to be read correctly. Can you just pull down Wikipedia articles, run them through the normalization pipeline, and then write rules to try to improve on the current normalization pipeline? Obviously, there'd have to be some sort of parameters, like, I don't know, just do five or 10 big articles at a time to have some sort of cost control about how long and how deep this takes, but I just want to see if you can describe how you think that process would work and how good you'd be at it, and if there are any hurdles I'm not thinking of. Right now, the process for improving normalization is me listening to things, taking notes on stuff that's not right when it's actually pronounced. And that'll always be like the most authoritative thing. But it seems like a lot of this could be done just textually by how you (a large language model) would think a TTS would render it, without actually having to do the rendering.  
+
+==Status Report: 2026-10-11 (research / plan — no implementation)==
+Yes — this is workable, and here's how I'd structure it, plus the honest limits.
+
+Proposed process (a closed loop I can run as many times as you want):
+  1. Pick a set of articles (default ~5–10 large ones per run for cost control,
+     your call). Pull the raw Wikipedia text the app would fetch.
+  2. Run it through the *existing* `Normalizer` (`normalize(text)`) exactly as the
+     app does — not a re-implementation — so the diff is against real output.
+  3. Diff input vs. normalized output at the token/sentence level and hunt for
+     the specific failure classes the engine gets wrong. Concretely I look for:
+       • residuals the pipeline claims to fix but missed (e.g. a years range that
+         didn't expand, a roman numeral left as letters, "sq mi" without the space);
+       • over-normalization (things broken by a rule — e.g. "M1" or "3/4" in a
+         date/URL mangled);
+       • foreign/name pronunciation hotspots (ties into ticket 14);
+       • punctuation the engine will treat oddly (untransliterated Unicode dashes,
+         quotes, superscripts/², fractions like ⅔, nbsp);
+       • acronyms/caps that should be spelled vs. read as words.
+  4. For each finding, propose a *concrete rule* in the same format the app uses
+     (`bulk_replace.csv`, `pronounced_acronyms.csv`, `regex_rules.txt`, or a small
+     Kotlin unit in `Normalizer.kt` when it's more than find/replace).
+  5. Apply candidate rules, re-run Normalizer on the same corpus, and confirm the
+     fix didn't regress other inputs (the existing `NormalizerTest` + a diff).
+
+How good I'd be at it:
+  • Strong at: static, rule-shaped problems — missed number/unit/range expansions,
+    stray Unicode, acronym casing, obvious foreign-name respellings — because
+    these are exactly "text in vs text out" and don't need audio.
+  • Weak/uncertain at: how a *specific engine* actually pronounces a boundary case
+    (does "v1.2" read well? will "Le Havre" be mangled?). My model of TTS rendering
+    is a heuristic, not ground truth. Expect some false positives where I "fix"
+    something the engine already said fine.
+  • So: I surface candidates with confidence labels, and your listening remains the
+    authoritative final check. This is a force-multiplier for *finding* candidates,
+    not a replacement for your ear.
+
+Cost controls (your "5–10 articles at a time" instinct is exactly right):
+  • Fixed corpus size per run; I report tokens/time and stop, never an open-ended
+    crawl.
+  • Only article text is processed; the actual TTS is never run by me (no audio
+    generation, no engine calls), so cost is purely text I/O + reasoning.
+  • Each run ends in a reviewable diff of *proposed rule edits*, not silent
+    changes — so you approve what actually lands.
+
+Hurdles / things you may not have considered:
+  1. Ground truth gap: I'm guessing what "sounds wrong" textually. Needs your
+     spot-check before rules ship, especially for subjective/engine-specific cases.
+  2. Regression risk: a new regex rule can subtly break valid text (dates, URLs,
+     ratios). I'll lean on the existing unit tests + a before/after diff, but
+     rules that are only most-of-the-time-right need care (the pipeline already
+     has some guarded patterns for exactly this reason).
+  3. Rule-format fit: not every fix is a one-line find/replace; some will need a
+     small Kotlin unit in `Normalizer.kt` (the code already reserves those cases
+     explicitly). That's fine, just means not everything is CSV-edit-only.
+  4. Corpus quality: results are only as good as the articles picked. A
+     deliberately diverse sample (years, units, foreign names, quotes, tables)
+     matters more than raw count.
+
+Recommendation: treat this as a recurring "normalization review" pass you can
+trigger, outputting a ranked list of proposed rules with confidence + a
+before/after diff for each, which you approve (or not) and which I then fold into
+the rule assets + tests. Still research — nothing implemented this pass.
+==reply==
+This sounds good. Why don't you try doing that for a couple of articles, say, Blue Whale and Black Hole, and see what rules you come up with. I think it's important to remember that the process is already broken in the sense that there's things that are already being said wrong, so I wouldn't be too afraid of breaking it further, and we can always unbreak it later. As you say, this is just a continuous evolution of trying to reduce exceptions to make it less broken over time. (Eventually, this will probably all be superseded by models that are big enough to normalize everything, but for right now these littler models can't. So we're trying to do it as much as we can on phone hardware.) Like, if I come back to you later with things that sound wrong, it should be relatively easy to look through the regex and see which one caused it. So let's put like a 90% confidence threshold. If you think you've got a rule that is 90% likely to be better than existing, go ahead and just implement it. And then for the ones that you're like, maybe, but not sure. Put those <90% confidence ones in here in the ticket, and I'll review them. 

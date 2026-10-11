@@ -24,3 +24,52 @@ Decisions I'd want before implementing: (1) whether "prefer offline" means
 always-offline or store-but-verify-online; (2) how to handle re-fetching when
 online (update the stored copy?); (3) whether resume-on-open should be
 automatic or a prompt. Leaving open for your direction.
+==reply==
+(1 and 2) I think the question here really is how to handle the discrepancy if the online version potentially gets updated and you've bookmarked it, and stored it (Your  point one is harder for me to understand than two, but they sound sort of like the same sort of decision). You have a cached copy that's the thing you're using for position saving and for listening. So when you come back later, do you use that or the online version. I think the answer is to by default stick with the version at the time of bookmarking. Do not fetch anew if there's a stored version. However, within the listing of bookmarked articles, give a little reload button and then the user can intentionally reload. one of the main reasons I want to do this, partly to avoid extra network hits, but that's pretty minor. But I don't want to lose the position if the person has bookmarked it. It sort of also gives the user a way to pin a version of the article so that the application is able to just seamlessly maintain a play location. 
+(3) Let's prompt "Resume from prior location?" with a yes/no. Yes, means the obvious start playing from where you were. Obviously, we may back up to the earliest beginning of the paragraph. That seems to be a sort of design limitation currently. Even if there is a no, if the user presses the play resume button in the control panel then it still resumes from that saved location. The intent is that audio starring by virtue of tapping on an article might be surprising (bad, avoid), but we do want to give them a couple of opportunities to be able to do that, both when re-opening (convenient) and via player controls (In case they want to scroll through and look at the article first, or just accidentially hit "no" on the first pop up)
+
+==Status Report: 2026-10-11 (plan, updated after reply)==
+STILL NOT IMPLEMENTED — this is a refined PLAN incorporating your three decisions,
+for the next implementation pass. No code has been written.
+
+Locked-in decisions (from your reply):
+  (1+2) "Stick with the bookmarked version by default."
+        → Open an article from the bookmarks list (or when an offline copy exists)
+          uses the stored copy. Do NOT auto-refresh on open.
+        → Add an explicit "reload" affordance in the bookmarks list; only that
+          intentional action re-fetches + overwrites the stored copy. Position is
+          NOT reset by a reload (pin + play-location are preserved across refresh).
+  (3)   "Prompt 'Resume from prior location?'" on open.
+        → Yes: start playing from the saved paragraph (back up to paragraph start).
+        → No:  don't auto-play on open (audio must not start by surprise).
+        → Either way, the player's play/resume control still resumes from the saved
+          location, so "no" on the popup is recoverable.
+
+Design notes for implementation (unchanged core, tightened to the replies):
+  • Storage: app-internal files + SharedPreferences, no new dependency. Per
+    bookmark store: title, the scrubbed display HTML/text (the offline listen
+    source), and last position = (sectionId, paragraphIndex).
+  • Search box: hollow bookmark IconButton to the LEFT of the clear (X) icon,
+    always present. Tap toggles save/un-save. When opening a title that is
+    bookmarked, load the stored copy.
+  • Menu: replace the gear on the player bar with a menu icon → menu items
+    {Settings, Bookmarks}. Settings moves into the menu (keep the existing
+    SettingsActivity). Bookmarks opens a new BookmarksActivity listing saved
+    titles; each row has a "reload" button; tapping a row opens the article.
+  • Resume: on open, if a saved position exists → "Resume from prior location?"
+    dialog. The play button always resumes from the saved paragraph when one
+    exists (per your intent).
+
+Open/edge considerations to verify during implementation (not blocking):
+  • Paragraph-start resume vs. current-utterance: the TTS queue tracks
+    (sectionId, paragraphIndex) per utterance, so resume = enqueue from that
+    paragraph's first utterance (matches the "back up to paragraph start" callout).
+  • Reload while listening: decide whether refresh is disallowed during active
+    playback (simplest) or swaps the queue atomically.
+  • Un-save behavior: does removing a bookmark also delete its stored copy, or
+    just its "saved" flag? (Lean: deleting the bookmark deletes the stored copy,
+    unless the article is still open.)
+
+Nothing further to do until told to implement.
+==reply==
+Doesn't seem like there's anything to decide on paragraph start resume. That plan sounds fine Reload while listening, disallow as the simplest plan sounds fine. Unsave also deletes stored copy and makes it as if it was never stored in the first place. Please implement. 

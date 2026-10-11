@@ -1,4 +1,4 @@
-==Original Issue==
+d==Original Issue==
 Larger TTS models (Whether cloud-based or local, "large" relative to the phone) tend to have a large delay at the beginning of each paragraph. Certainly for the first paragraph, this is unavoidable, but for subsequent paragraphs, in order to prevent that gap, I'm wondering is there any way that we can throw those paragraphs out to the TTS model or to the service sooner so that there is less of a gap?
 
 ==Status Report: 2026-10-10 21:10 PDT==

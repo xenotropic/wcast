@@ -4,3 +4,88 @@ Stage two would be then what to do with those to find a correct foreign pronunci
 Stage three would be taking whatever the output of stage two is and formatting it as part of the text normalization process so that the speech engine can use whatever information we got from stage two to say it differently. My understanding from doing some other research is that we should be able to use some sort of speech synthesis markup language, SSML, I think, where certain words could be wrapped in SSML tags, and we can pass in IPA if that seems like it's supported by Cookero and Pocket TTS that's good enough for me to say go. I don't care if we break other engines for right now. 
 So, tasks for you, I think, are first: just think big picture. Am I designing this right? Are there any obvious ways in order to solve this problem that I'm missing? If this wheel has already been invented by some other Android level service, then let's use that. And then, if I'm not, go through and research each of these stages and give a report on how hard they are, what dependencies they bring in, both the obvious in-apk dependencies of dictionaries or additional packages, but also in terms of network hits. Do pay attention to whether users might hit API call limits if they're hitting Wiktionary 50 times or 150 times for a particular article. Maybe there could be packaging of API calls or something like that. So it's just a single call for 50 words. 
 There is no implementation to do on this ticket yet. This is only a research project on your first pass-through.
+
+==Status Report: 2026-10-11 (research / plan — no implementation)==
+Big-picture answer first: yes, the three-stage design is the right shape, with one
+important correction — the existing normalization pipeline *already transliterates
+non-ASCII to ASCII* (Normalizer stage 1), and speech is delivered as a plain
+`android.speech.tts.TextToSpeech.speak(String)` with no per-word locale/phoneme
+hints. So stages 2–3 can't just "wrap a word in SSML" and hope the engine respects
+it through the plain-text speak() path; they require either (a) switching to
+SSML/full API params for flagged utterances, or (b) producing a *pronunciation
+respelling in plain ASCII* as the output (e.g. IPA → a phonetically-respelled word
+the engine will say acceptably). Both are viable; (b) is far lower-risk and keeps
+the app's dependency-light "plain text to engine" model. See stage notes below.
+
+Stage 1 — which words are "foreign" / dubious to pronounce as English:
+  • Android has NO built-in "is this word in English" API. There is a system
+    `Locale`-based spell-checker service (framework `TextServicesManager`) but it
+    is user-dependent, slow, and not reliable for this in practice.
+  • Practical, dependency-light heuristic: keep a bundled English wordlist
+    (SCOWL / wordfreq top-N, a few MB but compressible — or a hashed/Bloom set) and
+    flag tokens not in it. This avoids N network calls entirely for stage 1.
+    Cost: one-time APK growth (~1–3 MB compressed), matching the "small ish" but
+    "might be worth it" tradeoff you already anticipated.
+  • Cheaper alternative to evaluate: heuristics only (non-ASCII chars, rare
+    diacritic patterns, title-case-in-sentence, un-English n-grams). Far smaller,
+    but more false positives/negatives.
+  • Recommendation: bundled wordlist Bloom/frozen set + a small "always-English"
+    whitelist of common noise words. No network for stage 1.
+
+Stage 2 — foreign → IPA / pronunciation:
+  • Wiktionary/Wikidata via API is the right instinct. Wikidata has lexemes with
+    IPA; Wiktionary dumps have IPA transcripts. Both are queryable in *batch*:
+    Wikidata SPARQL / Wikibase `EntitySearch`+`wbeditentity`-adjacent reads, or the
+    Wiktionary REST `*` batch via a single `search` + `parse` call, can cover many
+    words per request (addressing your "50–150 single calls" concern).
+  • Rate limits: Wikimedia asks for a User-Agent and moderate QPS; batching 50
+    words into one request (or a few) is the key lever. A local LRU cache
+    keyed on the word collapses repeats across articles and across sessions.
+  • Fallback when a word has no IPA: a language-detection guess (e.g. detect the
+    source language from the word/context) → generic mapping table, or leave as-is.
+  • Dependency: nothing heavy — plain HTTP (OkHttp already likely present) against
+    Wikimedia endpoints. No dictionary SDK needed.
+
+Stage 3 — feed the pronunciation back into speech:
+  • SSML: Android's TextToSpeech does surface SSML only for a *narrow* set of
+    engines/configurations. `speak()` does NOT accept inline `<phoneme>`/IPA
+    reliably (IPA support is essentially absent from the standard engine surface;
+    some engines accept `<phoneme alphabet="ipa" ph="...">` only in
+    `synthesizeToFile`/full-vocab files). So wrapping in SSML is a red herring for
+    this app's current plain-text model and would break the "only Cookero/Pocket"
+    requirement anyway (they don't all parse SSML identically).
+  • The robust, engine-agnostic path: convert the IPA back to an ASCII
+    *pronunciation respelling* in Normalizer stage(s), so we emit e.g. "Versailles"
+    → "vair-SIGH", joined to the surrounding text. This uses the exact pipeline
+    already in place (an ordered transform), needs no SSML, and works on every
+    engine including the two named. This is the recommended approach.
+  • If full-IPA is ever wanted for an engine that supports it, that is a *separate*
+    opt-in knob on the per-engine params path (`Bundle` extras or a vocabulary
+    file) — keep it out of v1.
+
+Report summary (difficulty / dependencies / network):
+  • Stage 1: easy-to-medium, offline, ~1–3 MB compressed bundle, zero network.
+  • Stage 2: medium, HTTP-only, batched Wikimedia calls, needs a local cache +
+    polite UA; network cost dominated by first-seen words only.
+  • Stage 3: medium, pure-Kotlin in Normalizer (a new earlier stage before
+    transliterate/diacritic-folding, or a precise token-level replace before stage
+    1), zero dependency, zero network.
+  • Overall APK cost: modest (wordlist + no new SDKs). No per-article API-call
+    storms if stage 1 is offline and stage 2 is batched + cached.
+
+Open questions for you before any "go":
+  1. Confirm preference: pronunciation *respelling* (ASCII, engine-agnostic — my
+     recommendation) vs. SSML/IPA for only some engines?
+  2. Acceptable bundled wordlist size (~1–3 MB) for stage 1 offline detection?
+  3. Batch: is an upfront "fetch pronunciation for all unknown words after article
+     load, in one or two requests" acceptable (small delay on first listen), vs.
+     lazy inline?
+
+Still a research project — nothing implemented, no code written.
+==reply==
+Number one, baseline question, should we be smashing it to ASCII? Like, are we losing information about how things are pronounced that could be used for this sort of transform? You had previously recommended against keeping full Unicode because that would increase size, but maybe can we quantify that as to megabytes and just review and maybe reject that again?
+Your questions
+(1) I mean, research this one further as to exactly which engines. I really would prefer passing IPA or SSML. I mean, it's really the same thing, IPA via SSML. Sounds like your determination is that the TTS engine just does not permit this, but you do say a narrow set of engines and configurations. So, can you explain what that is in more detail?
+(2) Yes, that sounds acceptable
+(3) I think you need to think about this a little more. I do like the idea of lazy inline, but look at the overall architecture and think about when it makes sense to do this. Could we do it immediately after article load for the entire article? This is maybe feature creep, but I'm wondering if we should do a text normalization render of the entire article after it loads. So like the article is fetched, it is displayed for the user, and then there's a normalized version that is generated in the background and cached for that specific article temporarily if it's not bookmarked or as part of the bookmark storage if it is. Because there's going to be a weight on Wikipedia API, which is outside of our control and Could be longer in other parts of the world, I'd rather not introduce this API-based normalization on a paragraph-by-paragraph basis. 
+This remains a research and planning task. 

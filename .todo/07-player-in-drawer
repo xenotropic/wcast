@@ -65,7 +65,8 @@ No code was changed for this ticket. Recommend we implement it as a modest,
 follow-up feature once you confirm the two decisions above (dependency budget and
 whether a seek bar is in scope).
 ==reply==
-I'm okay with the dependency add of media three, so go ahead and implement this. No progress seek bar is necessary. The primary wish is to be able to stop from the media drawer because we still have media button issues where it's not working very well or at all. That will be a different issue. But for this issue, I just want to be able to make sure that there is a media player that shows up that allows stopping of play. There are other controls that are easy low-hanging fruit then add them also, like the next paragraph, last paragraph buttons. If those are obvious and easy ads, then do it. This is now an active development ticket. It is no longer planning. ==Status Report: 2026-10-11 12:43 PDT==
+I'm okay with the dependency add of media three, so go ahead and implement this. No progress seek bar is necessary. The primary wish is to be able to stop from the media drawer because we still have media button issues where it's not working very well or at all. That will be a different issue. But for this issue, I just want to be able to make sure that there is a media player that shows up that allows stopping of play. There are other controls that are easy low-hanging fruit then add them also, like the next paragraph, last paragraph buttons. If those are obvious and easy ads, then do it. This is now an active development ticket. It is no longer planning. 
+==Status Report: 2026-10-11 12:43 PDT==
 IMPLEMENTED & CLOSED. The app now shows a media-style notification (drawer /
 lock-screen player) whenever it is speaking, with transport controls for
 previous / play-pause / next / stop, plus a "Paused"/"Now playing" subtitle and
@@ -97,3 +98,5 @@ Verified: `./gradlew assembleDebug` and `testDebugUnitTest` pass.
 One thing to confirm on-device: on Android 13+ the system may prompt for
 notification permission; if denied, the media buttons still work but the
 notification won't show.
+==reply==
+I have reopened this because while it does appear, it doesn't seem fully functional yet. It seemed like the very first time I pressed pause on it after installing the app, it worked, but then it didn't cause a resume. You can tell me that's just not part of the functionality. I guess that could be okay. But then what's not okay is that even if I started it again from within the app, after that it seemed to just become not functional. It's still appearing and the buttons can be tapped, but They don't do anything. The status does change with changes in articles, but it's that stop-start functionality that is most important.

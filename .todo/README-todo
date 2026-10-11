@@ -1,6 +1,6 @@
 This file is informational for LLM agents that are directed here. If you have not been specifically directed to work on tasks within this to-do directory, then there's nothing for you to do here. Unless you're an agent who has been specifically directed to edit this file, this file itself, this README, is only for revision by humans. However, the individual files are editable by agents and should be edited, in accordance with the instructions here. If you *have* directed here by a prompt, then the general format for working with this directory is:
 
-Each text file is sort of like a GitHub issue or a Jira ticket. This directory is gitignore, so it will not be tracked. 
+Each text file is sort of like a GitHub issue or a Jira ticket. These should be tracked and pushed to remote on a regular basis. This is unlike all other code, which is only pushed to remote on a specific instruction. The intent here is to allow me to review and edit to-do tickets on my phone where I'm listening to things. 
 
 If the ticket says "==CLOSED==" at the top then it's a closed ticket and there's nothing to do, move on. 
 
