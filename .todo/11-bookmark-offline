@@ -100,8 +100,10 @@ What was built:
     the listening position).
   • Resume prompt: opening a bookmarked article that has a saved position shows a
     "Resume from prior location?" dialog. Yes → plays from that paragraph (backed
-    up to paragraph start). No → does not auto-play. Either way, the player's play
-    button resumes from the saved paragraph when one exists.
+    up to paragraph start) through the end of the article. No → does not auto-play.
+    Either way, the player's play button resumes from the saved paragraph when one
+    exists. Resume reads to the end of the article regardless of the continuity
+    setting (it's a "keep listening" action, not a section-scoped play).
 
 Decisions applied as requested:
   • paragraph-start resume: fine, implemented (starts at the paragraph's first

@@ -218,7 +218,7 @@ class MainViewModel : AndroidViewModel {
         // from that paragraph (the user's "even if they hit No on the popup" case).
         val saved = bookmarkStore.load(state.title)
         if (saved != null && saved.sectionId != null && saved.paragraphIndex != null) {
-            playParagraph(saved.sectionId, saved.paragraphIndex)
+            resumeFromSavedLocation(saved.sectionId, saved.paragraphIndex)
             return
         }
         speechController.speakArticle(state.title, state.sections)
@@ -444,7 +444,27 @@ class MainViewModel : AndroidViewModel {
     fun resumeSavedPosition() {
         val prompt = _resumePrompt.value ?: return
         _resumePrompt.value = null
-        playParagraph(prompt.sectionId, prompt.paragraphIndex)
+        resumeFromSavedLocation(prompt.sectionId, prompt.paragraphIndex)
+    }
+
+    /**
+     * Resumes from [sectionId]/[paragraphIndex] through the end of the article,
+     * independent of the continuity setting — the "resume" action implies the user
+     * wants to keep listening to the rest, unlike a plain section/paragraph play.
+     */
+    private fun resumeFromSavedLocation(sectionId: String, paragraphIndex: Int) {
+        val state = _uiState.value
+        if (state !is UiState.Article) return
+        val index = state.sections.indexOfFirst { it.id == sectionId }
+        if (index < 0) return
+        val section = state.sections[index]
+        if (paragraphIndex !in section.paragraphs.indices) return
+
+        stopSpeaking()
+        val following = state.sections.drop(index + 1)
+        speechController.speakFromParagraph(section, paragraphIndex, following)
+        _speakingState.value = SpeakingState.Section(sectionId)
+        mediaButtonHandler.onPlaybackStarted(state.title)
     }
 
     /** Dismisses the resume prompt without starting playback. */
