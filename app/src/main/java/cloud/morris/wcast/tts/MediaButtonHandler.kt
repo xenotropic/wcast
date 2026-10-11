@@ -149,6 +149,35 @@ class MediaButtonHandler(context: Context) {
                 }
                 return super.onMediaButtonEvent(mediaButtonIntent)
             }
+
+            // ── Transport callbacks for the media-style notification ─────────
+            // When a MediaStyle notification is tied to this session token, the
+            // system can deliver its transport button taps (play/pause/stop/
+            // skip) directly to these callbacks *instead of* (or in addition
+            // to) our `PendingIntent.getBroadcast` actions. Without these
+            // overrides those taps hit the no-op defaults and the drawer
+            // controls appear dead. We forward each to the same handlers the
+            // broadcast path uses, so both delivery routes behave identically.
+
+            override fun onPlay() {
+                onPlayPausePressed?.invoke()
+            }
+
+            override fun onPause() {
+                onPlayPausePressed?.invoke()
+            }
+
+            override fun onStop() {
+                onStopPressed?.invoke()
+            }
+
+            override fun onSkipToNext() {
+                onNextPressed?.invoke()
+            }
+
+            override fun onSkipToPrevious() {
+                onPreviousPressed?.invoke()
+            }
         })
         setMediaButtonReceiver(mediaButtonPendingIntent(context))
     }

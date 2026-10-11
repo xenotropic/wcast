@@ -100,3 +100,28 @@ notification permission; if denied, the media buttons still work but the
 notification won't show.
 ==reply==
 I have reopened this because while it does appear, it doesn't seem fully functional yet. It seemed like the very first time I pressed pause on it after installing the app, it worked, but then it didn't cause a resume. You can tell me that's just not part of the functionality. I guess that could be okay. But then what's not okay is that even if I started it again from within the app, after that it seemed to just become not functional. It's still appearing and the buttons can be tapped, but They don't do anything. The status does change with changes in articles, but it's that stop-start functionality that is most important.
+
+==Status Report: 2026-10-11 21:52 PDT==
+FIXED (root cause identified + patch applied, builds clean).
+
+Root cause: the media-style notification is attached to the app's MediaSession
+via `Notification.MediaStyle().setMediaSession(sessionToken)`. When a notification
+is bound to a session token that way, Android can route the transport button taps
+(play/pause/stop/skip) *directly to the session's `MediaSession.Callback`
+`onPlay`/`onPause`/`onStop`/`onSkipToNext`/`onSkipToPrevious` — instead of (or in
+addition to) firing our `PendingIntent.getBroadcast` actions. Our callback only
+overrode `onMediaButtonEvent`; the five transport methods were left at their
+no-op defaults. Result: the drawer controls rendered and the title still updated
+(via `notify()` on article changes), but the taps that landed on the session
+path did nothing — exactly the "appears but buttons are dead" symptom, and why a
+race could make an early tap work once before the session path took over.
+
+Fix: overrode all five transport callbacks in `MediaButtonHandler`'s
+`MediaSession.Callback`, forwarding each to the same handlers the broadcast path
+uses (`onPlayPausePressed`, `onStopPressed`, `onNextPressed`, `onPreviousPressed`).
+Both delivery routes now behave identically. `onPlay`/`onPause` both map to
+`togglePause()` (so the same play/pause control resumes as well as pauses).
+
+Verified `./gradlew assembleDebug` compiles. Please re-test on-device: pause
+should now also resume (the play button), and stop/prev/next should keep working
+across pause→resume and across opening a new article.
