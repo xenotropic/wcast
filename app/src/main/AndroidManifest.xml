@@ -2,6 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Required (Android 13+) to show the media notification. On older
+         versions notifications are implicitly permitted. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Allow the app to query and bind to installed TTS engines (Android 11+). -->
     <queries>
@@ -43,6 +46,12 @@
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
         </receiver>
+
+        <!-- Receives button taps from the media notification (stop / previous /
+             play-pause / next) and routes them to the active media session. -->
+        <receiver
+            android:name=".tts.MediaControlReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>

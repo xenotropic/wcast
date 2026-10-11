@@ -121,6 +121,11 @@ class MainViewModel : AndroidViewModel {
         mediaButtonHandler.onMainButtonPressed = { stopSpeaking() }
         // Losing audio focus (call, or another app taking over) also stops speech.
         mediaButtonHandler.onFocusLost = { stopSpeaking() }
+        // Media-notification / drawer transport controls route back here.
+        mediaButtonHandler.onStopPressed = { stopSpeaking() }
+        mediaButtonHandler.onPreviousPressed = { skipBack() }
+        mediaButtonHandler.onNextPressed = { skipForward() }
+        mediaButtonHandler.onPlayPausePressed = { togglePause() }
     }
 
     /** Re-reads user preferences so the UI reflects changes made in Settings. */
@@ -192,7 +197,7 @@ class MainViewModel : AndroidViewModel {
         stopSpeaking()
         speechController.speakArticle(state.title, state.sections)
         _speakingState.value = SpeakingState.WholeArticle
-        mediaButtonHandler.onPlaybackStarted()
+        mediaButtonHandler.onPlaybackStarted(state.title)
     }
 
     /** Reads a single section by its id, or stops if it is already playing. */
@@ -223,7 +228,7 @@ class MainViewModel : AndroidViewModel {
         }
         speechController.speakSections(sectionsToSpeak)
         _speakingState.value = SpeakingState.Section(id)
-        mediaButtonHandler.onPlaybackStarted()
+        mediaButtonHandler.onPlaybackStarted(state.title)
     }
 
     /**
@@ -243,7 +248,7 @@ class MainViewModel : AndroidViewModel {
         val following = if (settings.continuity) state.sections.drop(index + 1) else emptyList()
         speechController.speakFromParagraph(section, paragraphIndex, following)
         _speakingState.value = SpeakingState.Section(sectionId)
-        mediaButtonHandler.onPlaybackStarted()
+        mediaButtonHandler.onPlaybackStarted(state.title)
     }
 
     /** Stops any ongoing speech and clears the speaking state. */
@@ -287,7 +292,7 @@ class MainViewModel : AndroidViewModel {
             else -> Unit
         }
         // Re-acquire focus (it may have been abandoned) and mark as playing.
-        mediaButtonHandler.onPlaybackStarted()
+        mediaButtonHandler.onPlaybackStarted((_uiState.value as? UiState.Article)?.title)
     }
 
     /** Toggles between paused and playing for the current stream. */

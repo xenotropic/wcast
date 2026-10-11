@@ -1,8 +1,12 @@
 package cloud.morris.wcast.tts
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.drawable.Icon
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
@@ -10,6 +14,7 @@ import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Build
 import android.view.KeyEvent
+import cloud.morris.wcast.R
 
 /**
  * Owns the audio-focus and media-session plumbing needed so that a press of the
@@ -49,6 +54,13 @@ class MediaButtonHandler(context: Context) {
          */
         var active: MediaButtonHandler? = null
             private set
+
+        const val CHANNEL_ID = "wcast_playback"
+        const val NOTIFICATION_ID = 1
+        val ACTIONS: Long = PlaybackState.ACTION_PLAY_PAUSE or
+            PlaybackState.ACTION_STOP or
+            PlaybackState.ACTION_SKIP_TO_NEXT or
+            PlaybackState.ACTION_SKIP_TO_PREVIOUS
     }
 
     /** Invoked when the headset main/media button is pressed while speaking. */
@@ -57,10 +69,41 @@ class MediaButtonHandler(context: Context) {
     /** Invoked when audio focus is lost (call, or another app takes over). */
     var onFocusLost: (() -> Unit)? = null
 
+    // ── Media-notification button callbacks ──────────────────────────────────
+    // These are driven by the media-style notification / drawer controls and
+    // mirror the in-app player bar (see MediaControlReceiver).
+    var onStopPressed: (() -> Unit)? = null
+    var onPreviousPressed: (() -> Unit)? = null
+    var onNextPressed: (() -> Unit)? = null
+    var onPlayPausePressed: (() -> Unit)? = null
+
+    private val appContext = context.applicationContext
+
+    private val notificationManager: NotificationManager =
+        appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+    /** The article currently being read, shown in the media notification. */
+    private var currentTitle: String? = null
+
     init {
         // Expose this instance to MediaButtonReceiver so the manifest-registered
         // receiver can forward headset presses back here.
         active = this
+        ensureNotificationChannel()
+    }
+
+    /** Creates the (API 26+) notification channel for the media notification. */
+    private fun ensureNotificationChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "Playback",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "Shows the article currently being read and transport controls."
+            setShowBadge(false)
+        }
+        notificationManager.createNotificationChannel(channel)
     }
 
     private val audioManager =
@@ -166,17 +209,22 @@ class MediaButtonHandler(context: Context) {
     }
 
     /**
-     * Marks the session as the active media player (playback state "playing") and
-     * acquires audio focus. Call when speech is about to start or resume.
+     * Marks the session as the active media player (playback state "playing"),
+     * acquires audio focus, and shows the media notification. Call when speech
+     * is about to start or resume.
+     *
+     * @param title The article currently being read, shown in the notification.
      */
-    fun onPlaybackStarted() {
+    fun onPlaybackStarted(title: String? = null) {
+        if (title != null) currentTitle = title
         requestFocus()
         mediaSession.setPlaybackState(
             PlaybackState.Builder()
-                .setActions(PlaybackState.ACTION_STOP or PlaybackState.ACTION_PLAY_PAUSE)
+                .setActions(ACTIONS)
                 .setState(PlaybackState.STATE_PLAYING, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1f)
                 .build()
         )
+        notify(paused = false)
     }
 
     /**
@@ -186,10 +234,11 @@ class MediaButtonHandler(context: Context) {
     fun onPlaybackPaused() {
         mediaSession.setPlaybackState(
             PlaybackState.Builder()
-                .setActions(PlaybackState.ACTION_STOP or PlaybackState.ACTION_PLAY_PAUSE)
+                .setActions(ACTIONS)
                 .setState(PlaybackState.STATE_PAUSED, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1f)
                 .build()
         )
+        notify(paused = true)
     }
 
     /**
@@ -209,15 +258,88 @@ class MediaButtonHandler(context: Context) {
     fun onPlaybackStopped() {
         mediaSession.setPlaybackState(
             PlaybackState.Builder()
-                .setActions(PlaybackState.ACTION_STOP or PlaybackState.ACTION_PLAY_PAUSE)
+                .setActions(ACTIONS)
                 .setState(PlaybackState.STATE_PAUSED, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1f)
                 .build()
         )
+        // Nothing is playing, so dismiss the media notification.
+        notificationManager.cancel(NOTIFICATION_ID)
+        currentTitle = null
     }
+
+    /**
+     * Shows (or updates) the media-style notification reflecting the current
+     * playback state, with transport controls for stop / previous / play-pause /
+     * next.
+     */
+    private fun notify(paused: Boolean) {
+        val builder = Notification.Builder(appContext, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(currentTitle ?: "Wcast")
+            .setContentText(if (paused) "Paused" else "Now playing")
+            .setOngoing(!paused)
+            .setOnlyAlertOnce(true)
+            .setStyle(
+                Notification.MediaStyle()
+                    .setMediaSession(mediaSession.sessionToken)
+                    .setShowActionsInCompactView(1, 2, 3)
+            )
+            .addAction(previousAction())
+            .addAction(playPauseAction(paused))
+            .addAction(nextAction())
+            .addAction(stopAction())
+            .setContentIntent(appContentIntent())
+
+        try {
+            notificationManager.notify(NOTIFICATION_ID, builder.build())
+        } catch (_: SecurityException) {
+            // POST_NOTIFICATIONS not granted (API 33+); media button handling
+            // still works, we simply cannot show the notification.
+        }
+    }
+
+    private fun appContentIntent(): PendingIntent {
+        val intent = Intent(appContext, cloud.morris.wcast.MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        return PendingIntent.getActivity(
+            appContext,
+            0,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    private fun mediaAction(action: String, icon: Int, title: String): Notification.Action {
+        val intent = Intent(appContext, MediaControlReceiver::class.java).setAction(action)
+        val pi = PendingIntent.getBroadcast(
+            appContext,
+            action.hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        return Notification.Action.Builder(Icon.createWithResource(appContext, icon), title, pi).build()
+    }
+
+    private fun previousAction() =
+        mediaAction(MediaControlReceiver.ACTION_PREVIOUS, android.R.drawable.ic_media_previous, "Previous")
+
+    private fun nextAction() =
+        mediaAction(MediaControlReceiver.ACTION_NEXT, android.R.drawable.ic_media_next, "Next")
+
+    private fun playPauseAction(paused: Boolean) =
+        mediaAction(
+            MediaControlReceiver.ACTION_PLAY_PAUSE,
+            if (paused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause,
+            if (paused) "Play" else "Pause"
+        )
+
+    private fun stopAction() =
+        mediaAction(MediaControlReceiver.ACTION_STOP, android.R.drawable.ic_menu_close_clear_cancel, "Stop")
 
     /** Releases the session. Call from the owner's destroy path. */
     fun release() {
         abandonFocus()
+        notificationManager.cancel(NOTIFICATION_ID)
         mediaSession.release()
         if (active === this) {
             active = null
