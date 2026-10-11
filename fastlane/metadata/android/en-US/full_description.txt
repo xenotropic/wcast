@@ -1,0 +1,5 @@
+This app acts as a bridge between Wikipedia content and whatever app is registered as the Android TTS engine. The intent is to allow you to get up-to-date Wikipedia content and have it read by your choice of TTS apps.
+
+It is somewhat designed around the idea of using it with Marmalade TTS, but is an unrelated application (and developer), except that they work well together. It also works fine with the default installed TTS engine.
+
+It allows you to play specific sections, and shows you where you're at in the text of the article.

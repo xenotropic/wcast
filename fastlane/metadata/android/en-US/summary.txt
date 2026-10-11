@@ -1,0 +1,1 @@
+Fetches Wikipedia content, cleans it for reading, and passes it to the Android TTS engine.
