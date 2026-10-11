@@ -66,10 +66,19 @@ class SettingsActivity : ComponentActivity() {
         }
     }
 
-    /** Opens the Android text-to-speech settings screen, falling back to general settings. */
+    /**
+     * Opens the Android text-to-speech output settings screen ("Text-to-speech
+     * output"), falling back to general settings if the device doesn't expose it.
+     *
+     * The settings app exposes this screen via the action
+     * `com.android.settings.TTS_SETTINGS` (backed by
+     * `com.android.settings.Settings$TextToSpeechSettingsActivity`). We use the
+     * public action rather than the raw component name so it keeps working across
+     * OEM/vendor Settings implementations.
+     */
     private fun openTtsSettings() {
         try {
-            startActivity(Intent("com.android.settings.TextToSpeechSettings"))
+            startActivity(Intent("com.android.settings.TTS_SETTINGS"))
         } catch (_: ActivityNotFoundException) {
             try {
                 startActivity(Intent(android.provider.Settings.ACTION_SETTINGS))
@@ -204,6 +213,26 @@ private fun AboutBlock(versionName: String, versionCode: Int, buildTimeUtc: Stri
                 "Wikipedia, read a clutter-free version of any article, and have it " +
                 "read aloud \u2014 the whole article or one section at a time \u2014 using " +
                 "the text-to-speech engine already installed on your device.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "Content & Licensing",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            text = "Article content served by Wcast is sourced from Wikipedia. Text " +
+                "is available under the Creative Commons Attribution-ShareAlike 4.0 " +
+                "License; additional terms may apply.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = "Wcast is an independent application and is not affiliated with, " +
+                "endorsed by, or sponsored by the Wikimedia Foundation.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
