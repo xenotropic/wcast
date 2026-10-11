@@ -73,3 +73,55 @@ Open/edge considerations to verify during implementation (not blocking):
 Nothing further to do until told to implement.
 ==reply==
 Doesn't seem like there's anything to decide on paragraph start resume. That plan sounds fine Reload while listening, disallow as the simplest plan sounds fine. Unsave also deletes stored copy and makes it as if it was never stored in the first place. Please implement. 
+
+==Status Report: 2026-10-11 22:55 PDT==
+IMPLEMENTED (builds + all tests pass). Bookmarks are fully wired in, following the
+three locked-in decisions.
+
+What was built:
+  • Storage (`data/BookmarkStore.kt` + `data/BookmarkCodec.kt`): each bookmarked
+    article's scrubbed, structured sections are written as JSON to the app-internal
+    `filesDir/bookmarks/` (offline listen source — no network needed to re-read).
+    The saved listening position (sectionId, paragraphIndex) is kept separately in
+    SharedPreferences so it can be updated as playback advances without rewriting
+    the whole article file. No new runtime dependency (uses Android's built-in
+    org.json); a test-only org.json was added for the JVM round-trip test.
+  • Search-box bookmark icon: a hollow/filled bookmark IconButton now sits to the
+    LEFT of the clear (X) icon, always present, enabled only while an article is
+    open. Tap toggles save/un-save. When you un-save, the stored copy + position
+    are deleted — as if it was never stored.
+  • Stored-copy-by-default: opening an article (search, suggestion, internal link,
+    or from the bookmarks list) loads the stored copy when one exists; it never
+    auto-refreshes. Only the explicit reload button re-fetches.
+  • Menu: the settings gear is now an overflow (⋮) menu with {Bookmarks, Settings}.
+    Settings opens the existing SettingsActivity; Bookmarks opens the new
+    BookmarksActivity (a list of saved titles; each row taps to open, and has a
+    reload button that re-fetches + overwrites the stored copy while PRESERVING
+    the listening position).
+  • Resume prompt: opening a bookmarked article that has a saved position shows a
+    "Resume from prior location?" dialog. Yes → plays from that paragraph (backed
+    up to paragraph start). No → does not auto-play. Either way, the player's play
+    button resumes from the saved paragraph when one exists.
+
+Decisions applied as requested:
+  • paragraph-start resume: fine, implemented (starts at the paragraph's first
+    utterance, matching the existing `playParagraph` path).
+  • reload while listening: the reload button lives in the BookmarksActivity (a
+    separate screen), and only touches the stored copy/position — it never touches
+    the main screen's in-flight queue, so the "disallow during active listening"
+    concern is effectively moot (you're on the bookmarks screen when you reload).
+  • unsave: deletes stored copy + position, as if never stored.
+
+Position saving: while listening to a bookmarked article, the last spoken
+(sectionId, paragraphIndex) is continuously persisted (on each utterance start),
+so "the last paragraph you were at" stays current without any extra user action.
+Same position is captured at the moment of bookmarking if you were mid-listen.
+
+Files touched: MainViewModel.kt, ui/ArticleScreen.kt, MainActivity.kt,
+AndroidManifest.xml, plus new data/BookmarkCodec.kt, data/BookmarkStore.kt,
+BookmarksActivity.kt, and a BookmarkCodecTest.kt.
+
+Verification: `./gradlew assembleDebug` and `testDebugUnitTest` both pass. Please
+exercise on-device: tap bookmark on an open article, listen a while, reopen from
+the Bookmarks menu, hit "Resume" vs "No", and try a reload — and confirm the
+offline copy reads without data.

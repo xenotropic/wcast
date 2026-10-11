@@ -31,22 +31,28 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -68,7 +74,9 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 import cloud.morris.wcast.ActivePosition
+import cloud.morris.wcast.BookmarksActivity
 import cloud.morris.wcast.MainViewModel
+import cloud.morris.wcast.ResumePrompt
 import cloud.morris.wcast.SettingsActivity
 import cloud.morris.wcast.SpeakingState
 import cloud.morris.wcast.UiState
@@ -77,12 +85,18 @@ import cloud.morris.wcast.data.ArticleSection
 import cloud.morris.wcast.data.SearchSuggestion
 
 @Composable
-fun ArticleScreen(viewModel: MainViewModel = viewModel()) {
+fun ArticleScreen(
+    viewModel: MainViewModel = viewModel(),
+    pendingOpenTitle: String? = null,
+    onPendingOpenConsumed: () -> Unit = {}
+) {
     val query by viewModel.query.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val speakingState by viewModel.speakingState.collectAsStateWithLifecycle()
     val activePosition by viewModel.activePosition.collectAsStateWithLifecycle()
     val playerBarScale by viewModel.playerBarScale.collectAsStateWithLifecycle()
+    val bookmarked by viewModel.bookmarked.collectAsStateWithLifecycle()
+    val resumePrompt by viewModel.resumePrompt.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     // Re-read user preferences (e.g. player-bar size) whenever the user returns
@@ -90,6 +104,14 @@ fun ArticleScreen(viewModel: MainViewModel = viewModel()) {
     LifecycleResumeEffect(Unit) {
         viewModel.refreshSettingsFromStore()
         onPauseOrDispose { }
+    }
+
+    // Open a bookmark selected from the bookmarks screen (handed in via an intent
+    // extra), then signal the caller to clear it.
+    LaunchedEffect(pendingOpenTitle) {
+        val title = pendingOpenTitle ?: return@LaunchedEffect
+        viewModel.openBookmarkedArticle(title)
+        onPendingOpenConsumed()
     }
 
     // Survives across article loads; reset when a new article is opened below.
@@ -145,7 +167,10 @@ fun ArticleScreen(viewModel: MainViewModel = viewModel()) {
         SearchBar(
             query = query,
             onQueryChange = viewModel::onQueryChanged,
-            onSearch = viewModel::onSearch
+            onSearch = viewModel::onSearch,
+            isArticleOpen = uiState is UiState.Article,
+            isBookmarked = bookmarked,
+            onToggleBookmark = viewModel::toggleBookmark
         )
         PlayerBar(
             speakingState = speakingState,
@@ -157,6 +182,9 @@ fun ArticleScreen(viewModel: MainViewModel = viewModel()) {
             onStop = viewModel::stopSpeaking,
             onOpenSettings = {
                 context.startActivity(Intent(context, SettingsActivity::class.java))
+            },
+            onOpenBookmarks = {
+                context.startActivity(Intent(context, BookmarksActivity::class.java))
             }
         )
         HorizontalDivider()
@@ -193,13 +221,43 @@ fun ArticleScreen(viewModel: MainViewModel = viewModel()) {
             }
         }
     }
+
+    resumePrompt?.let { prompt ->
+        ResumeDialog(
+            prompt = prompt,
+            onResume = viewModel::resumeSavedPosition,
+            onDismiss = viewModel::dismissResumePrompt
+        )
+    }
+}
+
+@Composable
+private fun ResumeDialog(
+    prompt: ResumePrompt,
+    onResume: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Resume from prior location?") },
+        text = { Text("Continue listening where you left off (paragraph ${prompt.paragraphIndex + 1})?") },
+        confirmButton = {
+            TextButton(onClick = onResume) { Text("Resume") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("No") }
+        }
+    )
 }
 
 @Composable
 private fun SearchBar(
     query: String,
     onQueryChange: (String) -> Unit,
-    onSearch: () -> Unit
+    onSearch: () -> Unit,
+    isArticleOpen: Boolean,
+    isBookmarked: Boolean,
+    onToggleBookmark: () -> Unit
 ) {
     OutlinedTextField(
         value = query,
@@ -211,6 +269,13 @@ private fun SearchBar(
         singleLine = true,
         trailingIcon = {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onToggleBookmark, enabled = isArticleOpen) {
+                    Icon(
+                        imageVector = if (isBookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                        contentDescription = if (isBookmarked) "Remove bookmark" else "Bookmark",
+                        tint = if (isBookmarked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 if (query.isNotEmpty()) {
                     IconButton(onClick = { onQueryChange("") }) {
                         Icon(
@@ -238,7 +303,8 @@ private fun PlayerBar(
     onSkipBack: () -> Unit,
     onSkipForward: () -> Unit,
     onStop: () -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    onOpenBookmarks: () -> Unit
 ) {
     val isActive = speakingState.isActive
     val isPaused = when (speakingState) {
@@ -317,17 +383,36 @@ private fun PlayerBar(
                 )
             }
         }
-        // Settings gear, always available regardless of playback state.
-        IconButton(
-            onClick = onOpenSettings,
-            modifier = Modifier.align(Alignment.CenterEnd)
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Settings,
-                contentDescription = "Settings",
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(iconSize)
-            )
+        // Overflow menu (Settings / Bookmarks), always available.
+        var menuExpanded by remember { mutableStateOf(false) }
+        Box(modifier = Modifier.align(Alignment.CenterEnd)) {
+            IconButton(onClick = { menuExpanded = true }) {
+                Icon(
+                    imageVector = Icons.Filled.MoreVert,
+                    contentDescription = "Menu",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(iconSize)
+                )
+            }
+            DropdownMenu(
+                expanded = menuExpanded,
+                onDismissRequest = { menuExpanded = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Bookmarks") },
+                    onClick = {
+                        menuExpanded = false
+                        onOpenBookmarks()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Settings") },
+                    onClick = {
+                        menuExpanded = false
+                        onOpenSettings()
+                    }
+                )
+            }
         }
     }
 }

@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import cloud.morris.wcast.data.ArticleSection
+import cloud.morris.wcast.data.BookmarkStore
 import cloud.morris.wcast.data.SearchResult
 import cloud.morris.wcast.data.SearchSuggestion
 import cloud.morris.wcast.data.WikipediaRepository
@@ -62,6 +63,12 @@ data class ActivePosition(
     val paragraphIndex: Int?
 )
 
+/** A pending "resume from saved location?" prompt for a bookmarked article. */
+data class ResumePrompt(
+    val sectionId: String,
+    val paragraphIndex: Int
+)
+
 class MainViewModel : AndroidViewModel {
 
     private val repository: WikipediaRepository
@@ -80,6 +87,8 @@ class MainViewModel : AndroidViewModel {
 
     private val settings = SettingsStore(getApplication<Application>())
 
+    private val bookmarkStore = BookmarkStore(getApplication<Application>())
+
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
 
@@ -96,6 +105,14 @@ class MainViewModel : AndroidViewModel {
     /** Player-bar control size as a percentage (100 = default), from settings. */
     private val _playerBarScale = MutableStateFlow(settings.playerBarScale)
     val playerBarScale: StateFlow<Int> = _playerBarScale.asStateFlow()
+
+    /** Whether the currently-open article is bookmarked (drives the search-box icon). */
+    private val _bookmarked = MutableStateFlow(false)
+    val bookmarked: StateFlow<Boolean> = _bookmarked.asStateFlow()
+
+    /** Non-null while a "resume from saved location?" prompt should be shown. */
+    private val _resumePrompt = MutableStateFlow<ResumePrompt?>(null)
+    val resumePrompt: StateFlow<ResumePrompt?> = _resumePrompt.asStateFlow()
 
     private var searchJob: Job? = null
 
@@ -116,6 +133,8 @@ class MainViewModel : AndroidViewModel {
                 SpeakingState.WholeArticle
             }
             _activePosition.value = ActivePosition(sectionId, utterance.paragraphIndex)
+            // Maintain the saved play location for a bookmarked article as it plays.
+            persistPositionIfBookmarked(sectionId, utterance.paragraphIndex)
         }
         // A press of the wired/Bluetooth headset "main" button stops speech.
         mediaButtonHandler.onMainButtonPressed = { stopSpeaking() }
@@ -195,6 +214,13 @@ class MainViewModel : AndroidViewModel {
             return
         }
         stopSpeaking()
+        // For a bookmarked article with a saved position, the play control resumes
+        // from that paragraph (the user's "even if they hit No on the popup" case).
+        val saved = bookmarkStore.load(state.title)
+        if (saved != null && saved.sectionId != null && saved.paragraphIndex != null) {
+            playParagraph(saved.sectionId, saved.paragraphIndex)
+            return
+        }
         speechController.speakArticle(state.title, state.sections)
         _speakingState.value = SpeakingState.WholeArticle
         mediaButtonHandler.onPlaybackStarted(state.title)
@@ -344,9 +370,94 @@ class MainViewModel : AndroidViewModel {
     }
 
     private suspend fun loadArticle(title: String) {
-        val sections = repository.fetchArticle(title)
         stopSpeaking()
+        // Stick with the bookmarked (offline) copy by default; only fetch when no
+        // stored copy exists for this title.
+        val stored = bookmarkStore.load(title)
+        if (stored != null) {
+            presentArticle(stored.title, stored.sections)
+            _bookmarked.value = true
+            maybeOfferResume(stored)
+        } else {
+            val sections = repository.fetchArticle(title)
+            presentArticle(title, sections)
+            _bookmarked.value = false
+        }
+    }
+
+    /** Opens an article directly from the bookmarks list (uses the stored copy). */
+    fun openBookmarkedArticle(title: String) {
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            _uiState.value = UiState.Loading
+            try {
+                val stored = bookmarkStore.load(title)
+                    ?: run {
+                        // No longer stored (shouldn't happen from the list), fall back to fetch.
+                        val sections = repository.fetchArticle(title)
+                        presentArticle(title, sections)
+                        _bookmarked.value = false
+                        return@launch
+                    }
+                stopSpeaking()
+                presentArticle(stored.title, stored.sections)
+                _bookmarked.value = true
+                maybeOfferResume(stored)
+            } catch (e: Exception) {
+                _uiState.value = UiState.Error(e.message ?: "Something went wrong.")
+            }
+        }
+    }
+
+    /** Shows an article without resetting the scroll state. */
+    private fun presentArticle(title: String, sections: List<ArticleSection>) {
         _uiState.value = UiState.Article(title, sections)
+        _resumePrompt.value = null
+    }
+
+    /** Offers "resume from saved location?" when a bookmarked article has a position. */
+    private fun maybeOfferResume(bookmark: BookmarkStore.Bookmark) {
+        if (bookmark.sectionId != null && bookmark.paragraphIndex != null) {
+            _resumePrompt.value = ResumePrompt(bookmark.sectionId, bookmark.paragraphIndex)
+        }
+    }
+
+    /** Toggles the current article in/out of bookmarks. */
+    fun toggleBookmark() {
+        val state = _uiState.value
+        if (state !is UiState.Article) return
+        if (bookmarkStore.isBookmarked(state.title)) {
+            bookmarkStore.delete(state.title)
+            _bookmarked.value = false
+        } else {
+            bookmarkStore.saveCopy(state.title, state.sections)
+            // Capture the current play location (if any) at the moment of saving.
+            val pos = _activePosition.value
+            if (pos != null && (pos.sectionId != null || pos.paragraphIndex != null)) {
+                bookmarkStore.savePosition(state.title, pos.sectionId, pos.paragraphIndex)
+            }
+            _bookmarked.value = true
+        }
+    }
+
+    /** Resumes playback from the saved paragraph (used by the resume prompt's Yes). */
+    fun resumeSavedPosition() {
+        val prompt = _resumePrompt.value ?: return
+        _resumePrompt.value = null
+        playParagraph(prompt.sectionId, prompt.paragraphIndex)
+    }
+
+    /** Dismisses the resume prompt without starting playback. */
+    fun dismissResumePrompt() {
+        _resumePrompt.value = null
+    }
+
+    /** Persists the current play location for a bookmarked article (no-op otherwise). */
+    private fun persistPositionIfBookmarked(sectionId: String?, paragraphIndex: Int?) {
+        val state = _uiState.value
+        if (state is UiState.Article && bookmarkStore.isBookmarked(state.title)) {
+            bookmarkStore.savePosition(state.title, sectionId, paragraphIndex)
+        }
     }
 
     override fun onCleared() {

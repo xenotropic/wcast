@@ -1,5 +1,6 @@
 package cloud.morris.wcast
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -33,9 +34,13 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var settings: SettingsStore
 
+    /** A bookmark title handed in via [BookmarksActivity.EXTRA_OPEN_BOOKMARK]. */
+    private val pendingOpenTitle = mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         settings = SettingsStore(this)
+        pendingOpenTitle.value = intent.getStringExtra(BookmarksActivity.EXTRA_OPEN_BOOKMARK)
         setContent {
             WcastTheme {
                 var agreed by remember { mutableStateOf(settings.eulaAccepted) }
@@ -58,11 +63,19 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.fillMaxSize(),
                         color = MaterialTheme.colorScheme.background
                     ) {
-                        ArticleScreen()
+                        ArticleScreen(
+                            pendingOpenTitle = pendingOpenTitle.value,
+                            onPendingOpenConsumed = { pendingOpenTitle.value = null }
+                        )
                     }
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        pendingOpenTitle.value = intent.getStringExtra(BookmarksActivity.EXTRA_OPEN_BOOKMARK)
     }
 }
 

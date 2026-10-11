@@ -36,6 +36,11 @@
             android:exported="false"
             android:label="@string/app_name" />
 
+        <activity
+            android:name=".BookmarksActivity"
+            android:exported="false"
+            android:label="@string/app_name" />
+
         <!-- Receives ACTION_MEDIA_BUTTON broadcasts so wired/Bluetooth headset
              presses reach the active MediaSession as a broadcast, even when the
              in-process session callback path races against other media apps. -->

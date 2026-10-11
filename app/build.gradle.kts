@@ -92,4 +92,8 @@ dependencies {
 
     // JVM unit tests for the pure normalization logic
     testImplementation("junit:junit:4.13.2")
+    // Real org.json on the JVM test classpath (the app uses Android's built-in
+    // org.json, which is unavailable to plain unit tests) so the bookmark codec
+    // round-trip can be tested.
+    testImplementation("org.json:json:20240303")
 }
