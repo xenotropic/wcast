@@ -43,9 +43,11 @@ This means:
   Android's **Settings → System → Languages & input → Text-to-speech output**
   (usually "Google Speech Services") is what Wcast speaks with. Switch the
   engine or voice there, and Wcast's voice changes with it.
-- **Only permission is network access.** Wcast only requests the
-  `INTERNET` permission to fetch articles from Wikipedia. It talks to the TTS
-  service you already have, so there's no audio permission to grant.
+- **Only two permissions, both minimal.** Wcast requests `INTERNET` to fetch
+  articles from Wikipedia — it talks to the TTS service you already have, so
+  there's no audio permission to grant. On Android 13+ it also asks for
+  `POST_NOTIFICATIONS` once, so the media controls can appear while it reads
+  (see [Permissions](#permissions) below).
 
 ### Tuning the pronunciation
 
@@ -108,11 +110,17 @@ The debug APK is written to `app/build/outputs/apk/debug/`.
 
 ## Permissions
 
-Wcast requests a single permission:
+Wcast requests only these two permissions:
 
 - **`android.permission.INTERNET`** — to fetch Wikipedia articles.
+- **`android.permission.POST_NOTIFICATIONS`** — needed on Android 13 and newer
+  to show the media-playback card (the notification with pause/skip controls)
+  while an article is being read. Notifications require this permission starting
+  in Android 13; on Android 12 and below no permission is needed and none is
+  asked for. It is requested once, and playback/media-button control still works
+  if it is declined — only the on-screen card is hidden.
 
-No microphone, storage, or audio-record permissions are ever requested.
+No microphone, storage, location, or audio-record permissions are ever requested.
 
 ---
 
