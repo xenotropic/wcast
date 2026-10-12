@@ -16,3 +16,4 @@ Unless otherwise instructed by a prompt:
 (5) Put "==Status Report: [human-readable-date-time-California-time]==" with your analysis (if too uncertain) or completion status report (if a fix/implentation attempt) for your resolution attempt: what you changed, how, any testing or things you want the human to think about. "[human-readable-date-time-California-time]" is of course not a literal, but something for you to fill in with the date-time of your attempt completion report
 (6) For implementation attempts, do a local commit after successful build.
 (7) Closed tickets should have "-CLOSED" appended to the end of their file name and moved to the "closed" subdirectory. Files in that directory can be ignored by agents unless specifically directed. 
+(8) Remember that these tickets are going into a public repository, so make sure that they are scrubbed of any PII or information that seems like it should not be public. Report that back into your main chat output.
