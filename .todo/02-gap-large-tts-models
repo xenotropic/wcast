@@ -281,3 +281,35 @@ check on your usual cloud engine (should be unaffected). Ready to implement on
 your go. 
 ==reply==
 you are go do as described, 21 on pause and out of scope here now, merge adjacent short can happen subsequently to test separately.
+
+==Status Report: 2026-10-12 10:55 PDT==
+IMPLEMENTED (deeper multi-chunk look-ahead), all in `tts/SpeechController.kt`.
+
+What changed:
+  • Replaced the single `readyToPlayIndex: Int?` with a FIFO `readyIndices:
+    ArrayDeque<Int>` of finished-but-not-yet-played chunks, in ascending index
+    order.
+  • Added `topUpLookAhead()` — fills the one serialized synthesis slot from the
+    frontier (highest rendered index + 1) while it stays under the horizon
+    `currentIndex + LOOK_AHEAD` (`LOOK_AHEAD = 3`). Invoked from `playFile` and
+    `onSynthDone` so the render pipeline never idles.
+  • `advanceAfterUtterance` now pops-and-plays the front of `readyIndices` when
+    the next chunk is already rendered; the in-flight wait and the on-demand
+    `beginSynthesis` fallback are unchanged.
+  • `teardownAudio`/`rebuildEngine` clear `readyIndices` with the rest of the
+    state, so pause/resume/skip/stop and engine swaps keep their existing
+    behavior.
+
+Result: up to 3 chunks are pre-rendered while one plays (was 1), removing the
+per-paragraph synthesis gap whenever the engine renders faster than playback —
+the common Pocket TTS case. The bounded horizon keeps disk usage to a few WAVs
+and does not render any faster than the serialized engine allows.
+
+Validated: `./gradlew assembleDebug` + `testDebugUnitTest` pass; debug APK
+regenerated with a fresh build time. Still needs on-device listening on Pocket
+TTS (short-run → long-paragraph and list-heavy articles) plus a sanity check on
+a cloud engine.
+
+Not done here (per your reply): ticket 21 stays paused/out of scope, and the
+"merge adjacent short" (headings/list-item consolidation) is a separate follow-up
+to land and test separately.
