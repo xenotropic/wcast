@@ -200,4 +200,82 @@ test can cover the MediaPlayer/TextToSpeech lifecycle, so this needs on-device
 confirmation on Pocket TTS (and a sanity check on your usual cloud engine, which
 should be unaffected). Leaving the ticket open for your review. 
 ==reply==
-Kind of like it sounds like you expected, this works well for chunks of equal length If you have multiple short paragraphs those pretty well read pretty well if you have multiple medium to long paragraphs those also work pretty well But what breaks is if they're or not doesn't break but suboptimal still has a gap is if there's a short paragraph followed by a longer paragraph or another condition to consider is multiple short paragraphs before a long paragraph there can often be heading subheading both of which are short and then there's a long paragraph So the look ahead does seem like it needs to be longer. You might also think about whether there should be some special case handling for lists. Like sometimes there'll be lists that get rendered as separate paragraphs, but if it's an unordered or ordered list, you know, a bullet point list is pretty common in Wikipedia and that can also cause like five short things, ten short things, and then resumes with longer text afterward. So in that case, I would actually be fine consolidating those sorts of unordered lists or ordered lists into a single paragraph if that's the simplest solution. Either that or there could just be a indefinitely large look ahead I guess the final other thing is that this ticket should be looked at in conjunction with Ticket 21 pre-render because I'm not sure if any of the stuff there is going to affect what's happening here in the current pipeline 
+Kind of like it sounds like you expected, this works well for chunks of equal length If you have multiple short paragraphs those pretty well read pretty well if you have multiple medium to long paragraphs those also work pretty well But what breaks is if they're or not doesn't break but suboptimal still has a gap is if there's a short paragraph followed by a longer paragraph or another condition to consider is multiple short paragraphs before a long paragraph there can often be heading subheading both of which are short and then there's a long paragraph So the look ahead does seem like it needs to be longer. You might also think about whether there should be some special case handling for lists. Like sometimes there'll be lists that get rendered as separate paragraphs, but if it's an unordered or ordered list, you know, a bullet point list is pretty common in Wikipedia and that can also cause like five short things, ten short things, and then resumes with longer text afterward. So in that case, I would actually be fine consolidating those sorts of unordered lists or ordered lists into a single paragraph if that's the simplest solution. Either that or there could just be a indefinitely large look ahead I guess the final other thing is that this ticket should be looked at in conjunction with Ticket 21 pre-render because I'm not sure if any of the stuff there is going to affect what's happening here in the current pipeline
+
+==Status Report: 2026-10-12 10:29 PDT==
+DECISION RECORDED — target the deeper look-ahead as the next, self-contained
+increment on the current architecture. No ExoPlayer/Media3, no ticket 21
+coupling. Left as a plan pending your go-ahead (per "stable on current
+functionality").
+
+Scope decision
+--------------
+You're not moving to ExoPlayer right now, and ticket 21 (full-article pre-render)
+is paused pending that review (its reply says "on pause"). So this ticket now
+narrows to the increment you described — extend the existing single-chunk
+look-ahead so it pre-renders *several* chunks ahead — on the same `MediaPlayer` +
+`TextToSpeech.synthesizeToFile` pipeline. No new dependency, no engine swap, and
+no file changes outside `tts/SpeechController.kt`.
+
+What changes (all in `tts/SpeechController.kt`)
+----------------------------------------------
+Today the look-ahead is depth-1: `synthInFlight`/`synthIndex` holds the one
+render in flight and `readyToPlayIndex: Int?` holds the one finished chunk
+waiting to play; `maybePrimeLookAhead(index)` renders exactly `index + 1`.
+
+Plan: turn the single `readyToPlayIndex` into a small FIFO of finished chunks,
+and keep refilling the single in-flight synthesis slot from the *frontier*
+rather than only `playedIndex + 1`:
+
+  - Replace `readyToPlayIndex: Int?` with `readyIndices: ArrayDeque<Int>`
+    (ordered), bounded by a fixed horizon K (start with 3 chunks ahead of the
+    play head).
+  - Add `topUpLookAhead()`: while `!synthInFlight` and the frontier (highest
+    rendered-or-in-flight index + 1) is `< min(currentIndex + K, queue.size)`,
+    call `beginSynthesis(frontier)`.
+  - Invoke `topUpLookAhead()` from `playFile` and from `onSynthDone` so the
+    render pipeline never idles while there's room under the horizon.
+  - `advanceAfterUtterance`: pop-and-play from `readyIndices` when the current
+    chunk is already rendered; wait on the in-flight render if it's the current
+    one; otherwise synthesize on demand (the existing fallback, unchanged).
+  - `currentIndex` still advances only when a chunk becomes audible, so the
+    left-margin highlight/scroll, skip-by-section, pause/resume, and stop paths
+    are unchanged. `teardownAudio`/`resetPlayback` clear `readyIndices` along
+    with the rest.
+
+Why bounded (not "indefinitely large"): Android `TextToSpeech` serializes
+`synthesizeToFile` through one engine service, so only one chunk renders at a
+time no matter how many we enqueue. A bounded FIFO keeps the engine busy and
+builds a buffer of *finished* files; an unbounded queue only grows disk usage
+(one WAV per chunk) without rendering any faster.
+
+Honest ceiling
+--------------
+Deeper look-ahead removes the gap whenever the engine can render faster than
+playback consumes — the common case (Pocket TTS is "close to realtime"; the
+5–7 s you see is fixed per-utterance warm-up, not sustained slowness). It does
+*not* fully fix a run of very short chunks followed by a long one: each short
+heading/list item still pays a fixed warm-up, and because synthesis is
+serialized a long chunk's render can't start until every preceding short chunk
+has finished — so it can still fall behind and gap before the long chunk.
+
+Two companion fixes for that worst case (propose to land *after* this
+increment, not with it, to keep each change reviewable):
+  - Merge adjacent short chunks — headings/subheadings and ordered/unordered
+    list items — into a single utterance, so the fixed warm-up is paid once
+    instead of once per bullet. This is a *parsing* change (article-sectioning
+    code, not SpeechController) and is itself small/low-risk; you already said
+    you'd accept consolidating lists that way.
+  - Ticket 21 (full background pre-render to M4A) is the only complete fix for
+    "short run → long paragraph," but it's paused pending your ExoPlayer review
+    (ticket 23) and is out of scope here. This ticket's deeper look-ahead is
+    independent of 21 and can land now; when 21 lands, its pre-rendered-file
+    playback path simply bypasses this look-ahead.
+
+Verification
+------------
+`./gradlew assembleDebug` + `testDebugUnitTest`. No JVM unit test can drive
+MediaPlayer/TextToSpeech, so this needs on-device listening on Pocket TTS
+(especially short-run → long-paragraph and list-heavy articles) plus a sanity
+check on your usual cloud engine (should be unaffected). Ready to implement on
+your go. 
