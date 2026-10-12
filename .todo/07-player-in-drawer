@@ -126,4 +126,4 @@ Verified `./gradlew assembleDebug` compiles. Please re-test on-device: pause
 should now also resume (the play button), and stop/prev/next should keep working
 across pause→resume and across opening a new article.
 ==reply==
-Testing shows that the stop resume works as expected. However, the forward and back buttons, as appear in the media player notification thing causes it to close. Looks maybe like a runtime error. The text continues to speak, but the media player display is gone until I choose a another section to speak within the app. If you can find a very high confidence fix, then go ahead and try to implement. If you cannot, because it sounds like a runtime thing and there's nothing obvious, then (1) remove the forward and backward button, leaving just the media player with the stop start button, which works; and (2) let's create a new category of ticket for this, make a directory called deferred, and move this ticket to it. 
+Close as completed by ticket 09

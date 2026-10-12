@@ -13,6 +13,7 @@ this project is versioned, built, and committed.
 - **Coding agent:** Cline (the open-source coding agent). The app was originally
   written with DeepSeek; credit wording in the README reflects the project
   history, but this repository is maintained through Cline.
+  **General intent:** This is a Wikipedia text-to-speech Application for reading long form audio via the Android TTS system. We want to keep dependencies minimal / apk size small-ish. Everything will be open source. We want it to be as much like listening to a podcast as is practical, but within the constraints of how the Android TTS framework. 
 
 ## Git & CI conventions (IMPORTANT — must be followed)
 

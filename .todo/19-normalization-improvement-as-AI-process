@@ -122,3 +122,6 @@ scrubs those DOM nodes first, so I ignored it. Your on-device listening remains
 the authoritative check for anything subjective.
 
 This is a recurring pass I can rerun with different articles whenever you want. 
+==reply==
+Please implement (a) as to tons, but guard it to ensure that it is preceded by a number, maybe a space, and then immediately afterward there's either a space or a parenthesis. Look at the example for meters as m. These should pretty much be the same. 
+Please implement (b), Again, with location safeguards of being preceded by an integer, possibly a space, and then some sort of punctuation afterward, space, period, parenthesis. Same as the previous one, just making sure we're not in the middle of a word. You can leave this ticket open, but nothing to do besides those two quick implementations. 

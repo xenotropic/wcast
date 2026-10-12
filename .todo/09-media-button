@@ -360,3 +360,6 @@ It is the only runtime permission the media card needs, and it is exactly what
 Spotify/AntennaPod/podcast apps request. The playback service already degrades
 gracefully if it is denied (start/stop/pause/resume keep working; only the
 on-screen card is hidden). Recommendation: keep it — no code change needed. 
+==reply==
+close as completed (yay)
+There still seems to be a little bit of bugginess to the forward and back buttons, but the core media button thing is fixed. I will open another ticket later for just that. 
