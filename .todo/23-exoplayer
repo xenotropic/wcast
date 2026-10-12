@@ -1,0 +1,164 @@
+==Original Issue==
+This is sort of forking off from 21-pre-render per year request. I'm not especially concerned about 2-4 megabytes of bloat for exoplayer. That instruction was more about, like, adding on external binaries or things that are going to make it tens of megabytes bigger, which is not what exoplayer seems like. Especially if it sounds like this is something that would happen anyway and is more the like modern way to play media files. Setting aside pre-render for this ticket, can you just evaluate what it looks like to adopt Exoplayer now in terms of how the media card looks, how the current functionality of seeking and playing and tracking location works? What are the risks of breaking existing functionality if we just adopt ExoPlayer? 
+
+==Status Report: 2026-10-12 09:45 PDT (research/evaluation — no code)==
+
+What "adopt ExoPlayer" means here, concretely
+---------------------------------------------
+"ExoPlayer" today lives under the AndroidX **Media3** umbrella
+(`androidx.media3`). Adopting it means adding the `media3-exoplayer` playback
+engine and, for the media card/notification, `media3-session` (whose
+`MediaSessionService` is the modern replacement for the hand-rolled framework
+`MediaSession` + foreground `Service` we currently run in
+`WcastMediaService.kt`). It also pulls in `media3-common` and
+`media3-datasource`. There is no Compose impact: `media3-ui` (a View-based
+player widget) would NOT be used.
+
+There are two distinct "levels" of adoption, with very different cost/benefit:
+
+- Level A — drop-in swap: keep the existing per-utterance WAV pipeline and
+  look-ahead (ticket 02) in `SpeechController`, but replace the framework
+  `MediaPlayer` with ExoPlayer and replace `WcastMediaService`'s hand-rolled
+  session/notification with `MediaSessionService`. Same behavior, cleaner
+  stack, better media card.
+- Level B — continuous timeline: stop treating each paragraph as a separate
+  file and instead expose the whole article as one seekable timeline (a growing
+  playlist / `ConcatenatingMediaSource`). This unlocks a *real* seek bar and
+  continuous position; it is a genuine rework of `SpeechController`'s state
+  machine.
+
+The media card (notification + lock screen) — what changes
+----------------------------------------------------------
+Today (`WcastMediaService.notify`):
+- `Notification.MediaStyle` with a framework `MediaSession`, four actions
+  (previous / play-pause / next / **stop**), and `PlaybackState` published with
+  `PLAYBACK_POSITION_UNKNOWN` — so there is **no seek bar and no duration** on
+  the lock screen or in the drawer.
+
+With `media3-session` + `MediaSessionService`:
+- The notification is generated for you (media3's
+  `DefaultMediaNotificationProvider`, built on `androidx.media`). You get, for
+  free: a real **seek bar**, elapsed/total time, artwork slot, and the standard
+  transport buttons — the "podcast-like" card ticket 09 flagged.
+- It keeps working across lock screen, notification shade, Android Auto,
+  Wear OS, and Bluetooth (AVRCP) surfaces, driven by the same session.
+- Differences to expect:
+  * The default layout does **not** show an explicit "Stop" button — only
+    play/pause + skip (and rewind/forward when available). To keep Stop I'd add
+    a custom `MediaNotification.Provider`.
+  * Our hand-written "Now playing"/"Paused" text and the exact icon/compact-view
+    arrangement are replaced by media3's defaults (still customizable, but it's
+    new code to own).
+  * Title/artist come from `MediaItem.MediaMetadata`, so we'd set the article
+    title there instead of `setContentTitle`.
+
+Seeking, playing, and tracking location — current vs. ExoPlayer
+---------------------------------------------------------------
+Current behavior:
+- **Playing**: `SpeechController.playFile` plays one WAV per utterance through a
+  framework `MediaPlayer`, chained by `onCompletionListener` →
+  `advanceAfterUtterance`, with the ticket-02 look-ahead rendering the next
+  chunk while the current one plays.
+- **Seeking**: there is *no* in-paragraph seek and *no* seek bar. "Skip
+  forward/back" (`skipSections(delta)` → `enqueueFrom`) re-renders from a
+  retained *paragraph index*; it jumps at section boundaries, not to an
+  arbitrary time.
+- **Tracking location**: position is tracked at the *paragraph* level, not
+  continuously. `onUtteranceStarted` fires when each utterance begins, and
+  `MainViewModel` turns that into `ActivePosition(sectionId, paragraphIndex)`,
+  which drives the left-margin highlight, the "jump to current position"
+  affordance, and the saved bookmark resume point (`speakFromParagraph`). There
+  is no notion of "23 seconds into this paragraph."
+
+With ExoPlayer:
+- **Playing**: ExoPlayer plays the same rendered WAVs natively (it has a WAV/PCM
+  extractor). The look-ahead is preserved by appending the next `MediaItem` to
+  the playlist the moment it finishes rendering; `onMediaItemTransition` takes
+  over the role of `onCompletionListener`.
+- **Seeking**: `player.seekTo()` gives true, sample-accurate seeking — but only
+  *within already-rendered audio*. To seek "to 20:00" across the article, all
+  audio up to 20:00 must already exist. With the current lazy look-ahead
+  rendering, a forward seek past the next chunk still has to synthesize on
+  demand (same as today). A genuinely useful cross-article seek bar therefore
+  requires Level B and, practically, pre-rendered audio (ticket 21) — which is
+  exactly a continuous `.m4a`.
+- **Tracking location**: `Player.Listener` reports continuous position; you map
+  position → `(sectionId, paragraphIndex)` through a per-item duration/cue
+  table and keep driving the same highlight/scroll callback. Strictly more
+  precise than today's boundary-only tracking, and it's what a real seek bar
+  needs.
+
+The key architectural tension (worth naming explicitly)
+-------------------------------------------------------
+Today's pipeline is *lazy*: audio exists only for the current + one look-ahead
+chunk. A seek bar and continuous position are naturally features of a
+*complete, seekable* source. ExoPlayer can't invent audio that hasn't been
+synthesized yet. So the honest options are:
+1. Keep lazy rendering and adopt ExoPlayer only at Level A — you get the nicer
+   media card, but the seek bar is effectively cosmetic (seek within the
+   current chunk only).
+2. Adopt Level B and accept that meaningful seeking needs the article
+   pre-rendered (ticket 21) — which is where ExoPlayer's real value is.
+
+Risks of breaking existing functionality
+----------------------------------------
+1. **Headset/Bluetooth media-key routing (tickets 07/09)** — the hardest-won
+   behavior. Today it is hand-rolled: `setMediaButtonReceiver` +
+   `MediaButtonReceiver` + `FLAG_HANDLES_MEDIA_BUTTONS`. Media3 routes buttons
+   through `MediaSessionService` + `onMediaButtonEvent` instead. This is the
+   single highest regression risk; it must be re-tested explicitly with wired
+   and Bluetooth buttons after adoption.
+2. **Audio focus** — today hand-managed (`requestAudioFocus`/`abandon`: stop on
+   LOSS, pause + auto-resume on TRANSIENT, duck ignored). Media3 owns focus
+   automatically; our `pausedByFocusLoss` auto-resume logic needs to be mapped
+   onto Media3's focus handling, and phone-call behavior re-verified.
+3. **The per-chunk state machine** — `generation`, `currentIndex`,
+   `synthInFlight`, `readyToPlayIndex`, and the stale-callback guards all hang
+   off `MediaPlayer` callbacks. ExoPlayer swaps `onCompletionListener` for
+   `Player.Listener` (`onMediaItemTransition`/`onPlaybackStateChanged`), so this
+   is the largest code change and where subtle bugs (e.g. the gap-closing
+   look-ahead) could regress.
+4. **Pause/resume mid-synthesis** — the "cancel synthesis and re-render on
+   resume" path survives (it is on the TTS side, not the player side), but the
+   `player != null` vs `synthInFlight` branching must be re-expressed in
+   ExoPlayer's terms (is an item loaded, or still rendering?).
+5. **Notification shape** — losing the explicit Stop action and the exact
+   compact-view arrangement is user-visible (cosmetic, but you will notice it).
+6. **Dependency/API surface** — media3 is stable and widely used; minSdk 26 and
+   targetSdk 34 are fine; no conflict with Compose (we would not use media3-ui)
+   or with Kotlin 1.9.24 / AGP 8.5.2. `media3-session` adds `androidx.media`
+   plus a small futures library transitively. Size (~2–4 MB) you have already
+   said is fine.
+
+Recommendation
+--------------
+Sequence it — do not swap everything at once:
+
+1. **Now (low risk, immediate win):** adopt `media3-session` only —
+   `MediaSessionService` + `MediaController` — replacing `WcastMediaService`'s
+   hand-rolled `MediaSession`/notification, while `SpeechController` keeps its
+   per-chunk framework `MediaPlayer` and look-ahead. This gives the modern
+   media card (seek bar + duration + position) and deletes a lot of hand-rolled
+   plumbing, with the smallest blast radius. Position would be published
+   manually from the framework `MediaPlayer` until the engine swap.
+2. **When ticket 21 lands:** swap the playback engine to `media3-exoplayer` and
+   point it at the pre-rendered `.m4a` + cue table. That is the natural,
+   continuous, seekable source ExoPlayer wants — real paragraph seek + real
+   position tracking — without touching the live per-chunk pipeline at all.
+3. **Only if you later want a live seek bar:** do the Level B rework of the
+   lazy pipeline. Defer indefinitely; steps 1 + 2 cover the podcast feel you
+   are after.
+
+Net: nothing about "adopt ExoPlayer now" has to break current playback — the
+risk is concentrated in the media-button/focus/notification plumbing, and it
+can be isolated by doing the session layer first.
+
+Open questions (decisions before I implement)
+---------------------------------------------
+1. Sequencing — agree with "media3-session now, ExoPlayer engine when 21
+   lands"? Or do you want the full engine swap (Level B) now?
+2. Notification — is dropping the explicit "Stop" action acceptable (standard
+   media3 layout), or should I keep it via a custom `MediaNotification.Provider`?
+3. Scope — is this ticket meant to *evaluate* only (done here), or should I go
+   ahead and implement the Level-1 session swap as the next step?
+
