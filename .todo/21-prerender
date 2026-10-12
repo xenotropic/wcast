@@ -1,0 +1,87 @@
+==Original Issue==
+This is a research and planning ticket for right now. A bigger feature to scope out. We're already rendering WAV files now, so it seems like a pretty obvious thing to do would be to allow the user to pre-render the entire article. This would allow them to use GTS services that are less than real-time on their phone and might also be a workaround for issue 02, which I still haven't looked at this morning, could be fixed. The question is, what would it look like to add to bookmarks menu Another icon where you can tap some sort of icon that indicates offline or render. Not sure what that icon would be. And then the app sets off a background progress press to render the entire article as normalized and then save it as some sort of compressed format. Obviously, we don't keep it as wave. Part of the research would be to figure out what that offline format would be by default. MP3 comes to mind as universal, but probably also just whatever codec is going to be on most phones already, whatever we can access from within the system or have minimal dependencies. And then the other question is: what playback would look like in terms of staying synchronized if you just have one big file? Maybe this is something that ties into using Exoplayer, which is something that came up in closed ticket nine as being potentially a desirable feature to have more podcast-like playback. But I'm also just wondering if we're gonna break the synchronization with paragraphs. The bar that shows up on the left as to what's being read now and being able to zoom to that section and track what's being played in terms of the text on the screen. 
+==Status Report: 2026-10-12 07:46 PDT==
+
+RESEARCH ONLY — no code changed. This is a scoping/planning write-up; the actual
+feature is deferred until you've reviewed it and answered the open questions at
+the end.
+
+What this is
+------------
+"Pre-render the whole article" = run the existing normalize-then-synthesize
+pipeline for every paragraph, but instead of playing each WAV as it finishes,
+keep going and produce one compact audio file the user can keep offline and
+play later without re-rendering. It also resolves ticket 02 for any article
+that has been pre-rendered: paragraph-boundary synthesis happens up front in
+the background instead of live during playback.
+
+Where it plugs in
+-----------------
+Today SpeechController renders one paragraph to WAV with
+TextToSpeech.synthesizeToFile, plays it with MediaPlayer, and (since ticket 02)
+pre-renders the next paragraph while the current one plays. The reading screen's
+left margin + scroll depend on knowing which paragraph is audible, so any
+pre-render scheme must keep a per-paragraph -> time-offset mapping.
+
+Format: probably AAC-in-M4A, no new dependency
+---------------------------------------------
+- Android's platform codecs do NOT include an MPEG-1 Layer III (*MP3*) encoder.
+  MediaCodec can decode MP3 but cannot write it, so a universal ".mp3" only works
+  if we ship an encoder — a dependency we'd rather avoid.
+- The platform DOES ship an AAC-LC encoder (the standard "OMX.google.aac.encoder")
+  plus MediaMuxer, which muxes AAC into an .m4a (MPEG-4) container. AAC-in-M4A is
+  playable on essentially every Android device, needs zero extra libraries, and
+  is a reasonable size/quality trade-off. This should be the default.
+- Distant option: Opus (better size/quality), but the platform Opus encoder isn't
+  guaranteed on every device and MediaMuxer has no Ogg muxer, so it would pull in
+  a library. Park this unless file size becomes a problem.
+- WAV can stay as the intermediate: TextToSpeech has no portable way to synthesize
+  straight to compressed audio, so the likely pipeline is synthesizeToFile -> WAV
+  per paragraph, then decode WAV -> encode AAC -> mux, appending each paragraph's
+  start time (ms) to a cue list.
+
+Keeping the paragraph highlight in sync
+---------------------------------------
+Two viable shapes:
+  A) ONE file + a sidecar cue table (paragraph index -> start ms). Requires the
+     encoder/muxer timestamps to line up with a monotonic clock and the player to
+     report position reliably (MediaPlayer/ExoPlayer both do). This is the nicer
+     user experience (one artifact to keep/download).
+  B) Per-paragraph AAC files in a folder, indexed by a small JSON manifest. Sync
+     is trivial (one file = one paragraph) and it reuses the current playback,
+     but there's no single "downloadable" file and cross-article seek is coarser.
+
+(A) is where adopting ExoPlayer (media3) pays off (see below); (B) is less code
+now.
+
+Is this the moment to adopt ExoPlayer?
+-------------------------------------
+Ticket 09 already flagged ExoPlayer as a desirable, more podcast-like engine.
+Pre-render strengthens the case: ExoPlayer gives precise seeking (so cue offsets
+work), background playback, and MediaSession/notification integration, and would
+let us drop the per-paragraph MediaPlayer dance for pre-rendered files. It is a
+real dependency, though. Two-step option: ship (B) on the current MediaPlayer
+first, then move to ExoPlayer when we want single-file (A).
+
+Where the button lives
+----------------------
+Your instinct (the bookmarks screen) is right: a pre-rendered article is basically
+"a page saved for offline listening", which is adjacent to a bookmark. Suggested
+shape: on the Bookmarks screen add an action per entry ("pre-render / make
+available offline") that starts a foreground service with a progress bar, because
+rendering a long article can take minutes on a slow engine. Store the files in
+app-private storage so no storage permission is needed; delete them on the
+existing "remove bookmark" flow.
+
+Open questions (need your call before I build)
+---------------------------------------------
+1. Format OK? AAC-in-M4A via the platform codec (my recommendation) vs. pulling
+   in an encoder for MP3/Opus.
+2. Single file + cue table, or per-paragraph bundle? (That decision determines
+   whether we take on ExoPlayer now.)
+3. Granularity: whole article only, or also per-section / "just the bookmarked
+   subtree"?
+4. Should pre-rendered articles get their own storage-management view (size,
+   delete, re-render), or stay tucked behind bookmarks?
+5. Icon/label and exact placement (bookmarks row vs. article overflow menu) —
+   low priority, but I'd like your read.
