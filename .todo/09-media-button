@@ -338,3 +338,25 @@ WHAT I'M LOOKING FOR IN wcast.log (paste it back here):
     player (not the TTS-engine uid).
 Please paste the WcastTTS log from a normal play plus the dumpsys media_session
 lines, and I'll confirm the synth/play sequence and whether the card now appears. 
+==reply==
+See the resource directory, and there are a couple of files there that are marked 10-11, 10:45 p.m. Even after that log, I tested with the two Bluetooth devices, and they also pass clean as far as start stop, which is a core functionality here. There does seem to be some stuff that's not quite right about forward and advance, but I think I'll just open another ticket about that for another time. Similarly, I think Exoplayer will be another ticket for another time. The one thing I want to fix before I push this to a release is that there seemed to be an introduction of a new requirement permissions for notifications. Is that strictly necessary in order to do this media card feature in this way. If it is, that's fine. I'm just trying to keep permissions to a minimum.
+
+==Status Report: 2026-10-11 22:56 PDT (answer to notification-permission question)==
+Yes — POST_NOTIFICATIONS is required to show the media card, but only on
+Android 13 (API 33) and up. There is no way around it: starting in Android 13,
+every notification (including the MediaStyle media-card) is gated behind that
+runtime permission, so without it the card simply never appears. On Android 12
+and below the permission does not exist (no dialog, card just works).
+
+Re the "keep permissions to a minimum" concern, two points:
+- This change did not add a manifest permission. The
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/> entry
+  was already in AndroidManifest.xml when the media card was first implemented.
+- What the new MainActivity code adds is only the one-time runtime REQUEST that
+  makes Android 13+ actually show the system dialog. Without it, the permission
+  is never granted and the card is silently hidden on 13+.
+
+It is the only runtime permission the media card needs, and it is exactly what
+Spotify/AntennaPod/podcast apps request. The playback service already degrades
+gracefully if it is denied (start/stop/pause/resume keep working; only the
+on-screen card is hidden). Recommendation: keep it — no code change needed. 
