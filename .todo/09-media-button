@@ -68,3 +68,273 @@ misbehaves, capture while it misbehaves and paste the output:
   adb shell logcat -d -s WcastMedia:V | tail -100
   adb shell dumpsys media_session | head -60
   adb shell dumpsys audio | grep -A40 'focus commands'
+
+==Status Report: ROOT CAUSE CONFIRMED — Wcast doesn't own the audio, the TTS engine does==
+
+Your 8:52pm logs pointed somewhere deeper than I had diagnosed before. The
+setMediaButtonReceiver change did NOT fix the button: your focus log shows the
+same loop (Wcast gains focus 20:43:57 -> Spotify re-requests focus 20:44:11 ->
+Wcast handleLoss; repeats 20:45:47 -> 20:46:04), and dumpsys media_session still
+says "Media button session is com.spotify.music" with Wcast absent from the
+Sessions Stack.
+
+THE SMOKING GUN (dumpsys audio -> PlaybackActivityMonitor)
+While Wcast is speaking, the actual audio is played by the TTS ENGINE in its own
+process, not by Wcast:
+
+  new player ... uid/pid:10416/17944 package:com.brahmadeo.supertonic.tts
+    type:android.media.AudioTrack attr:AudioAttributes: usage=USAGE_MEDIA
+    content=CONTENT_TYPE_SPEECH ...
+
+- default TTS engine on this phone: com.brahmadeo.supertonic.tts (uid 10416)
+- Wcast uid: 10426. SpeechController uses TextToSpeech.speak(), which delegates
+  synthesis AND audio output to the engine. Wcast's own uid never creates an
+  AudioTrack/MediaPlayer.
+
+WHY THAT KILLS THE BUTTON (AOSP exact behavior)
+Android picks the app that receives headset media buttons by *real audio
+playback*, not by media-session registration or audio focus.
+MediaSessionStack.updateMediaButtonSessionIfNeeded() walks
+AudioPlayerStateMonitor.getSortedAudioPlaybackClientUids() (uids that have an
+active AudioPlaybackConfiguration — a real AudioTrack/MediaPlayer — most recent
+first) and promotes the first uid that owns a media session.
+
+Because the audio belongs to the TTS engine (uid 10416, no media session), Wcast
+(uid 10426) is never the "lastly playing audio" uid, so Wcast's MediaSession is
+never promoted to media-button session. Routing falls through to the last real
+audio app — Spotify (uid 10286) — which keeps the button and resumes on every
+press -> re-requests focus -> Wcast loses focus and stops. This matches every
+one of your A–F observations across headset/engine combinations.
+
+So the earlier failures were never about focus, the notification, the drawer, or
+setMediaButtonReceiver. One root cause explains all of them.
+
+THE FIX (needs your sign-off — it touches the core TTS pipeline)
+Wcast must own the audio so its own uid becomes the active audio player:
+  1. TextToSpeech.synthesizeToFile(...) each utterance to a temp PCM/WAV, then
+     play it from Wcast's process with a local AudioTrack/MediaPlayer; or
+  2. (cleaner long-term) move playback to Media3 ExoPlayer, like a podcast app.
+Pause/resume/skip then operate on our own player instead of "stop the TTS queue
+and re-queue" — which also buys us real pause instead of stop/restart-at-chunk.
+
+I have NOT implemented this yet (it's a significant change and this phone is
+read-only). Suggested next steps:
+  - I implement synthesizeToFile + MediaPlayer (or Media3) on a branch.
+  - We test on the second ("write") phone, not your personal one.
+
+Quick re-verify on any headset while speaking (confirm which uid owns the audio):
+  adb shell dumpsys audio | grep -A40 PlaybackActivityMonitor
+  (look for "package:...tts type:android.media.AudioTrack")
+==reply==
+It doesn't seem like you built anything new, And your chat reply message seems to show that supersonic Owns the UID for the players, so it seems like you've actually answered your own question already. 
+Can you just review whether there's any downsides to this? I mean, I did kind of like the architectural simplicity of handing off to a system service, but it seems like that system service doesn't implement the basic media controls (Or maybe that would be up to the implementers of the service? I think part of the problem is I don't understand the architectural boundary between what's really an Android system service and what's being done by any given implementation of it. I'm a little surprised that the system level service does not provide this sort of start, stop for TTS -- skip back and forward, less so). This generating WAV files like this sort of architecturally the correct way of how other apps typically or what the Google recommends for the use of the TTS service?  Also, if we are moving to WAV files, can you explain why we wouldn't do the "cleaner long-term" move to the Media three Exoplayer? Is there any advantage to doing your option one over option two other than writing a some more lines of code or something? (Does one have a greater odds of success?)
+
+==Research / Planning Answers==
+
+(Q1) "I don't understand the architectural boundary between an Android system
+     service and what's done by any given TTS engine implementation."
+
+Short version: there is no Android *system* service that actually speaks. Android
+ships (a) a contract — the abstract `TextToSpeechService` — and (b) a client API
+— `android.speech.tts.TextToSpeech`. Your app binds (over Binder) to an
+*independently-installed engine app* that implements that contract, and it's that
+engine app where both the synthesis and the AudioTrack that plays the sound live.
+On this phone the engine is com.brahmadeo.supertonic.tts (uid 10416); Google's is
+com.google.android.tts. "The system service" only brokers the connection; the real
+playback is third-party app code running in the engine's own process. That's
+exactly why the audio player showed up under the engine's uid, not Wcast's.
+
+Why doesn't the framework give TTS full media controls (stop exists, but not
+pause, and no skip fwd/back)? Because the TTS API was designed for short,
+"say this now" use (TalkBack/accessibility, assistant replies) — not long-form
+playback. Its control surface is speak()/stop() plus QUEUE modes only. The
+*media* controls — pause/seek/skip, media-button routing, the media notification
+— belong to a separate subsystem: MediaSession + "real" audio players. Android
+routes headset buttons only to the app whose *own uid* has an active
+AudioTrack/MediaPlayer AND a matching active MediaSession. TTS engines never
+register a MediaSession (they're not meant to be your media player), so they can
+never be the button target. The two subsystems were never bridged in the
+framework; bridging them is exactly what a reading app must do, and every
+podcast/audiobook app does it the same way.
+
+And "maybe that would be up to the implementers of the service?" — yes, pause/
+stop are implemented by the engine's own code. But even a well-behaved engine that
+pauses still pauses its *own uid's* AudioTrack; that never helps routing, because
+routing keys off (uid + MediaSession), not "who paused".
+
+(Q2) Is rendering TTS to WAV files the architecturally correct / Google-
+     recommended approach? Any downsides?
+
+Yes — this is the scenario `TextToSpeech.synthesizeToFile(...)` exists for:
+"produce the audio, but let MY app own playback." It's the documented path for
+any use the engine's built-in player can't serve: seek, save/replay, DSP, or
+(our case) being a real MediaSession-backed player so hardware buttons route to
+us. So it's a well-trodden, intended pattern, not a hack. (Note: synthesizeToFile
+writes a WAV — RIFF header + PCM — by default, and both MediaPlayer and AudioTrack
+play WAV/PCM natively, hence "WAV files".)
+
+Honest review of downsides:
+- Lead-in latency: synthesizeToFile must finish a whole utterance before you can
+  start playing it, vs today's streaming speak(). On a real-time engine this is
+  small; we can hide most of it by rendering a short lookahead (synthesize the
+  next utterance while the current one plays).
+- Transient disk: WAVs in cacheDir, delete-as-you-go. 16-bit 44.1k mono ≈ 5 MB
+  per minute, so a long article = a few MB. Negligible on a phone.
+- We re-own queue chaining + pause-at-boundary + error handling — which is the
+  exact code a media library gives you for free (see Q3).
+- The audio is "baked" at the chosen voice/rate/pitch at synthesize time;
+  changing them mid-stream means re-synthesizing. We effectively re-speak on
+  those changes today, so no regression.
+
+(Q3) If we're moving to files, why not go straight to the "cleaner long-term"
+     Media3 ExoPlayer? Any advantage to Option 1 over Option 2 besides fewer LOC?
+     Which has greater odds of success?
+
+Key framing: Option 2 is NOT an alternative to synthesizeToFile — it's Option 1
+PLUS a media-player library. ExoPlayer plays files/URIs, not the TTS engine's
+live stream, so either way we must first render text -> audio files. The real
+choice is "wire our own MediaPlayer/AudioTrack" (Option 1) vs "adopt Media3
+ExoPlayer" (Option 2).
+
+Option 1 advantages (beyond fewer LOC):
+- No new dependency (smaller APK, nothing new to learn/version).
+- Smallest possible diff from today's SpeechController → fastest to a build we
+  can test on the write phone, and cheapest to abandon if a device still misroutes.
+- The AudioTrack variant can stream PCM straight out of the synthesizeToFile
+  result with minimal buffering.
+
+Option 2 advantages:
+- Purpose-built for "a sequence of audio items with real pause/seek/skip":
+  utterance chaining, gapless-ish joins, state machine, and lifecycle all free.
+- Media3 MediaSessionService produces the media notification, lock-screen,
+  drawer, and media-button wiring in the exact shape AntennaPod/Spotify use, so
+  OEM routing quirks are least likely to bite.
+- Future features (playback speed, skip-by-paragraph as a true seek) near-free.
+
+Odds of success: for the specific "will the button route to Wcast" question the
+two are EQUAL — the system only cares that Wcast's uid owns an active
+AudioTrack/MediaPlayer plus a matching active MediaSession; it does not care
+which player object we hold. So the outcome is decided by our session/flags, not
+by the player choice. Option 2 wins on long-term robustness and less hand-rolled
+state; Option 1 wins on least-effort-to-confirm.
+
+Recommendation (staged to de-risk, your call):
+  1. First: synthesizeToFile + a minimal local player behind the existing
+     SpeechController, then verify on the WRITE phone that `dumpsys media_session`
+     now names Wcast as the media-button session while reading (small, quick,
+     revertable — proves the theory before the bigger refactor).
+  2. Then: migrate to Media3 ExoPlayer as the end state (true pause/seek/skip,
+     notification, drawer, lock screen).
+If you'd rather skip step 1's throwaway and land on Media3 directly, I can do
+that too — the theory risk is identical; it's just a bigger single diff to
+review/test in one go.
+
+(Not building any of this yet — awaiting your go-ahead and whether we stage it
+or jump straight to Media3.) 
+=reply==
+okay go ahead on rec as written, 1 then 2
+
+==Implementation: Step 1 (DONE — synthesized files + local MediaPlayer)==
+
+Implemented "1 then 2" step 1: SpeechController no longer plays audio via
+engine.speak(). It now renders each utterance to a WAV in cacheDir/synth via
+TextToSpeech.synthesizeToFile(...), then plays the file sequentially from Wcast's
+own process with a local android.media.MediaPlayer (USAGE_MEDIA /
+CONTENT_TYPE_SPEECH audio attributes). Wcast's uid now owns the AudioTrack, so
+the existing WcastMediaService framework MediaSession should finally be the
+media-button target (dumpsys media_session should name Wcast while reading).
+
+What changed (one file): app/src/main/java/cloud/morris/wcast/tts/SpeechController.kt
+- Public API unchanged: speakArticle / speakSection / speakSections /
+  speakFromParagraph / pause / resume / skipSections / stop / shutdown, plus
+  onStreamDone and onUtteranceStarted callbacks. MainViewModel and
+  WcastMediaService are untouched.
+- Render pipeline: beginSynthesis(index) -> engine.synthesizeToFile(...) ->
+  UtteranceProgressListener.onDone -> playFile(index) -> MediaPlayer start ->
+  onCompletion -> advanceAfterUtterance (next chunk) or finishStream.
+- onStart is ignored (unreliable for synthesizeToFile); "utterance started" now
+  fires when OUR MediaPlayer starts, which is the moment audio is audible.
+- Pause/resume: true MediaPlayer.pause()/start() when a file is playing (resume
+  continues from the same position — a small behavior improvement). A pause that
+  lands while the current chunk is still synthesizing cancels it and resume
+  re-renders that chunk from its start (matches the previous restart behavior).
+- Skip unchanged in shape: re-render from a retained section start index.
+- A monotonically increasing generation is embedded in utteranceIds and captured
+  by every MediaPlayer/TTS callback, so stale callbacks from a previous
+  play/stop/skip are dropped.
+- Rendered files are deleted as-you-go (cacheDir/synth cleared on reset/stop/end).
+
+Behavioral notes / known limitations of step 1 (deliberate, per the plan):
+- Small lead-in latency per chunk (must finish synthesis before playback). Real
+  lookahead (synthesize next while playing) is deferred to the Media3 step.
+- Pause is still "retain current chunk" at chunk granularity — true per-byte
+  seek/skip comes with Media3.
+- Audio is baked at the engine's current voice/rate/pitch at synth time (same as
+  today's re-speak behavior).
+
+On-device verification for you (WRITE phone):
+- Play an article, then: adb shell dumpsys media_session — Wcast should be the
+  active media session with an active player owned by Wcast's uid (NOT the TTS
+  engine uid), and the media-button handler should be Wcast.
+- Press the wired/BT headset play-pause: it should pause/resume Wcast (not wake
+  Spotify/AntennaPod).
+
+Step 2 (Media3 ExoPlayer end state) remains queued for after you confirm step 1
+routes correctly. Build: assembleDebug; BuildConfig.BUILD_TIME_PT refreshed
+(2026-10-11T21:53:51 PDT), versionName 0.4.
+==reply==
+The result is no sound, No media player card. This is the 215351 PDT build, although because the behavior is completely different now, I'm sure it's the next build. I've decided for security reasons you will no longer have ADB access to this phone. I will try to get you another one, but for the meantime, I think in order to debug, you could do a debug build that has lines of code in it. You can ask me for logs that you want off of the phone, ADB commands that you want me to run.
+==Status Report: 2026-10-11 22:42 PDT==
+FIXED the root cause of "no sound", added runtime notification permission for
+the media card, and instrumented the pipeline with debug logging.
+
+ROOT CAUSE (no sound): playFile() reused outputFile(gen, index), which has a
+deliberate file.delete() side effect so synthesizeToFile() can safely overwrite
+its target. On the PLAYBACK path that same call deleted every just-rendered WAV
+an instant before MediaPlayer.setDataSource() tried to open it, so each chunk
+failed (setDataSource: file missing) with no exception surfaced — hence silence
+and no stable playback to anchor a media card.
+
+FIX: split into
+  - renderedFile(gen, index): pure path constructor, NO side effects, used ONLY
+    for playback (MediaPlayer.setDataSource).
+  - outputFile(gen, index): delete-first, used ONLY as the synthesis target.
+One file changed: app/src/main/java/cloud/morris/wcast/tts/SpeechController.kt.
+
+ALSO (same file): added Log.d/w/e throughout with tag "WcastTTS" so the whole
+sequence is traceable — startQueue, beginSynthesis, synthesizeToFile return code
++ resulting file size, onSynthDone/onSynthError/onFileError/onFileDone, playFile
+(exists/size/path, start, duration), prepare/start failures, resetPlayback,
+finishStream, pause/resume/stop/shutdown. This current build is your debug build.
+
+MEDIA CARD (second likely issue): on Android 13+ the MediaStyle notification is
+suppressed unless POST_NOTIFICATIONS is granted at runtime. Added an up-front
+request in MainActivity.onCreate() (AppCompatActivity-free; uses
+ActivityCompat). On first launch after installing THIS build you will get the
+notifications permission dialog — accept it, then re-test. (On Android 12 and
+below no dialog appears and none is needed.)
+
+BUILD: ./gradlew assembleDebug → BUILD SUCCESSFUL.
+APK: app/build/outputs/apk/debug/app-debug.apk (~16 MB, freshly regenerated).
+BuildConfig.BUILD_TIME_PT = 2026-10-11T22:34:58 PDT; versionName = 0.4.
+
+TO CAPTURE LOGS from the phone (run these yourself on any machine with adb, or
+via `adb shell` on the device):
+  adb logcat -c
+  (start playback in the app for ~10-15 s, press a wired/BT media button once or twice)
+  adb logcat -d -s WcastTTS > wcast.log
+  (also, to confirm the media session while it's playing:)
+  adb shell dumpsys media_session | grep -i wcast
+
+WHAT I'M LOOKING FOR IN wcast.log (paste it back here):
+ 1. A clean per-chunk sequence:
+      beginSynthesis index=0 ... → synthesizeToFile index=0 result=0 exists=true size=NNNN
+      → onSynthDone index=0 → playFile index=0 exists=true size=NNNN
+      → playFile started index=0 duration=NNNNms → (completion) → next chunk index=1 ...
+    result=0 is TextToSpeech.SUCCESS. Any "playFile: missing/empty render" or a
+    logged "setDataSource failed" exception means the WAV didn't land — paste it.
+ 2. That the stream advances chunk→chunk and finishStream fires at the end.
+ 3. The dumpsys output, to confirm Wcast is the active session and owns the
+    player (not the TTS-engine uid).
+Please paste the WcastTTS log from a normal play plus the dumpsys media_session
+lines, and I'll confirm the synth/play sequence and whether the card now appears. 

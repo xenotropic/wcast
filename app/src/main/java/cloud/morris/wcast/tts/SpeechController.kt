@@ -2,13 +2,18 @@ package cloud.morris.wcast.tts
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.MediaPlayer
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.util.Log
 import cloud.morris.wcast.data.ArticleSection
 import cloud.morris.wcast.normalization.Normalizer
 import cloud.morris.wcast.normalization.loadNormalizationRules
+import java.io.File
 import java.util.Locale
+
+private const val TAG = "WcastTTS"
 
 /**
  * A single unit of speech, tied back to where it came from in the article so
@@ -27,22 +32,32 @@ data class Utterance(
 )
 
 /**
- * Owns the Android [TextToSpeech] engine and turns structured
- * [ArticleSection]s into spoken audio.
+ * Turns structured [ArticleSection]s into spoken audio, and plays the result
+ * from *this* process.
+ *
+ * The Android [TextToSpeech] engine is used only to render text to a WAV file
+ * ([TextToSpeech.synthesizeToFile]); it never plays audio itself. The rendered
+ * files are then played back sequentially by a local [MediaPlayer] owned by
+ * Wcast. This is the crux of headset-button routing: when the TTS engine plays
+ * audio via `speak()`, the engine's *own* process (a different uid) owns the
+ * AudioTrack, so Android attributes the media session to the engine — not to
+ * Wcast — and the wired/Bluetooth "play/pause" button keeps routing to the
+ * previously-playing app (Spotify, AntennaPod). By rendering to files and
+ * playing them here, Wcast's uid owns the AudioTrack, matching the active
+ * [WcastMediaService] media session.
  *
  * Speaks either the entire article (title + all sections) or a single section,
- * sequentially, using [TextToSpeech.QUEUE_ADD] so playback proceeds in order
- * without blocking the caller.
- *
- * The engine gives no notion of a clock or current playback position, so all
- * "pause", "resume", and "skip" operations are implemented as *stop + re-queue
- * from a retained index* rather than a true seek. The current utterance being
- * spoken is tracked via [onUtteranceStarted] so the caller can reflect it in
- * the UI (e.g. highlight the active paragraph).
+ * sequentially. "Pause" and "resume" use [MediaPlayer]'s true pause/resume when
+ * a file is actively playing; a pause that lands while the current chunk is still
+ * being synthesized cancels it and resumes by re-rendering that chunk. "Skip" is
+ * implemented as *re-render from a retained index* rather than a true seek. The
+ * current utterance being spoken is tracked so the caller can reflect it in the
+ * UI (e.g. highlight the active paragraph).
  */
 class SpeechController(context: Context) : TextToSpeech.OnInitListener {
 
-    private val engine: TextToSpeech = TextToSpeech(context.applicationContext, this)
+    private val appContext = context.applicationContext
+    private val engine: TextToSpeech = TextToSpeech(appContext, this)
 
     /**
      * Normalizes display text into spoken text (Phase 3). Loaded lazily from the
@@ -50,7 +65,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
      * shown on screen.
      */
     private val normalizer: Normalizer by lazy {
-        Normalizer(loadNormalizationRules(context.applicationContext))
+        Normalizer(loadNormalizationRules(appContext))
     }
 
     /**
@@ -72,45 +87,54 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
     private var queue: List<Utterance> = emptyList()
 
     /**
-     * Index into [queue] of the utterance currently being spoken. Advances to the
-     * next utterance when the current one finishes.
+     * Index into [queue] of the utterance currently being rendered/spoken.
+     * Advances past each utterance as it finishes.
      */
     private var currentIndex = 0
 
     /**
-     * Monotonically increasing generation, bumped on every (re-)enqueue. Embedded
-     * in each utteranceId so late/in-flight callbacks from a *previous* queue can
-     * be recognized and ignored (they carry a stale generation).
+     * Monotonically increasing generation, bumped on every (re-)enqueue/stop.
+     * Embedded in each synthesized utteranceId and captured by each [MediaPlayer]
+     * callback so late/in-flight callbacks from a *previous* queue can be
+     * recognized and ignored (they carry a stale generation).
      */
     private var generation = 0
 
     /** Stream requested before the engine initialized; replayed in [onInit]. */
     private var pendingQueue: List<Utterance>? = null
 
+    /** The [MediaPlayer] currently playing a rendered WAV file, if any. */
+    private var player: MediaPlayer? = null
+
+    /** True while the user has paused and we retain the current chunk for resume. */
+    private var paused = false
+
+    /** True while a [TextToSpeech.synthesizeToFile] request is outstanding. */
+    private var synthInFlight = false
+
+    /** The queue index whose synthesis is in flight, valid only when [synthInFlight]. */
+    private var synthIndex: Int? = null
+
+    /** Directory holding the rendered WAV files for the current stream. */
+    private val synthDir: File = File(appContext.cacheDir, "synth")
+
     override fun onInit(status: Int) {
         ready = status == TextToSpeech.SUCCESS
+        Log.d(TAG, "onInit status=$status ready=$ready")
         if (ready) {
             engine.language = Locale.getDefault()
-            // Play as ordinary *media* (music stream), not as a navigation/TTS
-            // guidance prompt. By default many TTS engines request a "duck"
-            // focus (AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK), which lowers other
-            // apps instead of stopping them — producing the two-streams-at-once
-            // symptom. Declaring media usage lets Wcast (via the media session +
-            // audio focus in WcastMediaService) behave like Spotify/AntennaPod:
-            // starting our stream stops the other one.
-            engine.setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build()
-            )
+            // We only ever render to files, so the listener reports synthesis
+            // completion/failure — never audio playback. `onStart` is ignored on
+            // purpose: for synthesizeToFile it is inconsistent across engines and
+            // does not mean "audio is now audible". Audio becomes audible in
+            // playFile, which is where onUtteranceStarted fires.
             engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) = onUtteranceStarted(utteranceId)
+                override fun onStart(utteranceId: String?) = Unit
 
                 @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION")
-                override fun onError(utteranceId: String?) = onUtteranceFinished(utteranceId)
+                override fun onError(utteranceId: String?) = onSynthError(utteranceId)
 
-                override fun onDone(utteranceId: String?) = onUtteranceFinished(utteranceId)
+                override fun onDone(utteranceId: String?) = onSynthDone(utteranceId)
             })
         }
         pendingQueue?.let { queued ->
@@ -119,41 +143,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         }
     }
 
-    private fun onUtteranceStarted(utteranceId: String?) {
-        val (gen, index) = parseId(utteranceId) ?: return
-        if (gen != generation || index !in queue.indices) return
-        // Note: we deliberately do NOT update currentIndex here. Some engines
-        // fire onStart for the next utterance before onDone of the previous one,
-        // so writing currentIndex from onStart made it non-monotonic and broke
-        // skip targeting. currentIndex is advanced only by onUtteranceFinished.
-        onUtteranceStarted?.invoke(index, queue[index])
-    }
-
-    private fun onUtteranceFinished(utteranceId: String?) {
-        val (gen, index) = parseId(utteranceId) ?: return
-        if (gen != generation) return
-
-        // Monotonic: callbacks can arrive out of order, so never move backwards.
-        currentIndex = maxOf(currentIndex, index + 1)
-        if (currentIndex >= queue.size) {
-            queue = emptyList()
-            currentIndex = 0
-            onStreamDone?.invoke()
-        }
-    }
-
-    /**
-     * Parses an utteranceId of the form `tts-<generation>-<index>-<time>-<nano>`
-     * produced by [enqueueFrom], returning the (generation, index) pair.
-     */
-    private fun parseId(utteranceId: String?): Pair<Int, Int>? {
-        if (utteranceId == null) return null
-        val parts = utteranceId.split('-')
-        if (parts.size < 3 || parts[0] != "tts") return null
-        val generation = parts[1].toIntOrNull() ?: return null
-        val index = parts[2].toIntOrNull() ?: return null
-        return generation to index
-    }
+    // ── Public speaking API (call sites unchanged) ─────────────────────────────
 
     /** Speaks the whole article: title followed by each section in order. */
     fun speakArticle(title: String, sections: List<ArticleSection>) {
@@ -219,51 +209,240 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
     }
 
     private fun startQueue(utterances: List<Utterance>) {
-        engine.stop()
+        resetPlayback()
         queue = utterances
         currentIndex = 0
+        Log.d(TAG, "startQueue utterances=${utterances.size}")
         if (utterances.isEmpty()) {
             onStreamDone?.invoke()
             return
         }
-        enqueueFrom(0)
+        beginSynthesis(0)
     }
 
-    /** (Re-)enqueues [queue] starting at [fromIndex] (inclusive). */
+    /** (Re-)renders [queue] starting at [fromIndex] (inclusive). */
     private fun enqueueFrom(fromIndex: Int) {
-        engine.stop()
-        generation++
+        resetPlayback()
+        beginSynthesis(fromIndex)
+    }
+
+    /** Renders utterance [index] to a WAV file; playback begins in [onSynthDone]. */
+    private fun beginSynthesis(index: Int) {
+        if (index !in queue.indices) {
+            finishStream()
+            return
+        }
+        currentIndex = index
         val gen = generation
-        for (index in fromIndex until queue.size) {
-            val utterance = queue[index]
-            val utteranceId = "tts-$gen-$index-${System.currentTimeMillis()}-${System.nanoTime()}"
-            val params = Bundle().apply {
-                putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
-            }
-            // QUEUE_FLUSH on the first item guarantees any stale queued audio is
-            // discarded; subsequent items append with QUEUE_ADD.
-            val queueMode = if (index == fromIndex) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
-            engine.speak(utterance.text, queueMode, params, utteranceId)
+        val utterance = queue[index]
+        val utteranceId = "tts-$gen-$index-${System.currentTimeMillis()}-${System.nanoTime()}"
+        val params = Bundle().apply {
+            putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
+        }
+        val file = outputFile(gen, index)
+        synthInFlight = true
+        synthIndex = index
+        Log.d(TAG, "beginSynthesis index=$index/${queue.size} textLen=${utterance.text.length} file=${file.name}")
+        val result = engine.synthesizeToFile(utterance.text, params, file, utteranceId)
+        Log.d(TAG, "synthesizeToFile index=$index result=$result exists=${file.exists()} size=${file.length()}")
+        if (result != TextToSpeech.SUCCESS) {
+            // Rejected synchronously; an async onError may or may not also fire,
+            // but onSynthError guards against a double-advance via synthInFlight.
+            Log.w(TAG, "synthesizeToFile returned non-SUCCESS index=$index result=$result")
+            onSynthError(utteranceId)
         }
     }
 
-    /**
-     * Pauses playback. TTS has no true pause, so this stops the engine and
-     * remembers [currentIndex]; [resume] re-queues from there, which restarts the
-     * *current* utterance from its beginning (an accepted limitation).
-     */
-    fun pause() {
-        if (queue.isEmpty()) return
-        engine.stop()
-        // Bump generation so the interrupted utterance's late onDone/onError
-        // (from the stop above) is ignored and doesn't advance currentIndex.
-        generation++
+    private fun onSynthDone(utteranceId: String?) {
+        val (gen, index) = parseId(utteranceId) ?: return
+        if (gen != generation) return
+        if (!synthInFlight || synthIndex != index) return
+        synthInFlight = false
+        synthIndex = null
+        Log.d(TAG, "onSynthDone gen=$gen index=$index")
+        playFile(gen, index)
     }
 
-    /** Resumes playback from the utterance that was current when paused. */
+    private fun onSynthError(utteranceId: String?) {
+        val (gen, index) = parseId(utteranceId) ?: return
+        if (gen != generation) return
+        if (!synthInFlight || synthIndex != index) return
+        synthInFlight = false
+        synthIndex = null
+        Log.w(TAG, "onSynthError gen=$gen index=$index")
+        advanceAfterUtterance(gen, index)
+    }
+
+    /** Plays the previously rendered WAV for utterance [index] from our own process. */
+    private fun playFile(gen: Int, index: Int) {
+        if (gen != generation) return
+        releasePlayer()
+        // NOTE: use renderedFile(), NOT outputFile(). outputFile() deletes any
+        // existing file so the TTS engine can safely overwrite it *before*
+        // synthesis; calling it here would delete the just-rendered WAV and make
+        // every chunk fail silently (no sound).
+        val file = renderedFile(gen, index)
+        Log.d(TAG, "playFile gen=$gen index=$index exists=${file.exists()} size=${file.length()} path=${file.absolutePath}")
+        if (!file.exists() || file.length() == 0L) {
+            Log.e(TAG, "playFile: missing/empty render index=$index (exists=${file.exists()} size=${file.length()})")
+            onFileError(gen, index)
+            return
+        }
+        val mp = MediaPlayer()
+        try {
+            // Play as ordinary *media* (music stream) so Wcast's own uid owns the
+            // AudioTrack and the framework routes headset buttons to our session.
+            mp.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
+            mp.setDataSource(file.absolutePath)
+            mp.setOnCompletionListener { onFileDone(gen, index) }
+            mp.setOnErrorListener { _, _, _ ->
+                onFileError(gen, index)
+                true
+            }
+            mp.prepare()
+            player = mp
+            paused = false
+            mp.start()
+            Log.d(TAG, "playFile started index=$index duration=${mp.duration}ms")
+            onUtteranceStarted?.invoke(index, queue[index])
+        } catch (e: Exception) {
+            // Missing/corrupt WAV or a prepare/start failure. Release and treat the
+            // utterance as unrecoverable so reading is never stuck on one chunk.
+            Log.e(TAG, "playFile failed index=$index path=${file.absolutePath}", e)
+            try { mp.release() } catch (_: Exception) {}
+            player = null
+            onFileError(gen, index)
+        }
+    }
+
+    private fun onFileDone(gen: Int, index: Int) = advanceAfterUtterance(gen, index)
+
+    private fun onFileError(gen: Int, index: Int) = advanceAfterUtterance(gen, index)
+
+    /** Moves the stream past utterance [index], or finishes the stream at the end. */
+    private fun advanceAfterUtterance(gen: Int, index: Int) {
+        if (gen != generation) return
+        releasePlayer()
+        currentIndex = maxOf(currentIndex, index + 1)
+        if (currentIndex >= queue.size) {
+            Log.d(TAG, "stream finished after index=$index (${queue.size} utterances)")
+            finishStream()
+        } else {
+            beginSynthesis(currentIndex)
+        }
+    }
+
+    /** Cancels all in-flight synthesis/playback and invalidates stale callbacks. */
+    private fun resetPlayback() {
+        generation++ // invalidate outstanding TTS/MediaPlayer callbacks first
+        Log.d(TAG, "resetPlayback gen=$generation")
+        teardownAudio()
+    }
+
+    /** Releases the player and discards any in-flight synthesis and rendered files. */
+    private fun teardownAudio() {
+        releasePlayer()
+        synthInFlight = false
+        synthIndex = null
+        engine.stop()
+        clearSynthDir()
+    }
+
+    /** Marks the end of the stream (all utterances spoken or unrecoverable). */
+    private fun finishStream() {
+        Log.d(TAG, "finishStream")
+        teardownAudio()
+        queue = emptyList()
+        currentIndex = 0
+        paused = false
+        onStreamDone?.invoke()
+    }
+
+    private fun releasePlayer() {
+        player?.let { mp ->
+            player = null
+            try {
+                mp.setOnCompletionListener(null)
+                mp.setOnErrorListener(null)
+                if (mp.isPlaying) mp.stop()
+                mp.release()
+            } catch (_: Exception) {
+                // Already released / never prepared; nothing to do.
+            }
+        }
+    }
+
+    /** Absolute path of the rendered WAV for utterance [index] (no side effects). */
+    private fun renderedFile(gen: Int, index: Int): File {
+        if (!synthDir.exists()) synthDir.mkdirs()
+        return File(synthDir, "utt-$gen-$index.wav")
+    }
+
+    /**
+     * Path used as the *synthesis target*. Deletes any prior file first: some
+     * engines refuse to overwrite an existing file. Call only BEFORE
+     * [TextToSpeech.synthesizeToFile]. The playback path reads the just-written
+     * file via [renderedFile], which must never delete it.
+     */
+    private fun outputFile(gen: Int, index: Int): File {
+        val file = renderedFile(gen, index)
+        file.delete()
+        return file
+    }
+
+    private fun clearSynthDir() {
+        synthDir.listFiles()?.forEach { it.delete() }
+    }
+
+    /**
+     * Parses an utteranceId of the form `tts-<generation>-<index>-<time>-<nano>`
+     * produced by [beginSynthesis], returning the (generation, index) pair.
+     */
+    private fun parseId(utteranceId: String?): Pair<Int, Int>? {
+        if (utteranceId == null) return null
+        val parts = utteranceId.split('-')
+        if (parts.size < 3 || parts[0] != "tts") return null
+        val generation = parts[1].toIntOrNull() ?: return null
+        val index = parts[2].toIntOrNull() ?: return null
+        return generation to index
+    }
+
+    /**
+     * Pauses playback. When a file is actively playing this is a true pause via
+     * [MediaPlayer.pause] (resume continues from the same position); when the
+     * pause lands while the current chunk is still being synthesized, the
+     * synthesis is cancelled and resume re-renders that chunk from its start.
+     */
+    fun pause() {
+        if (queue.isEmpty() || paused) return
+        paused = true
+        Log.d(TAG, "pause (player=${player != null} synthInFlight=$synthInFlight) at index=$currentIndex")
+        if (player != null) {
+            try { player?.pause() } catch (_: Exception) { /* resume will re-render */ }
+        } else if (synthInFlight) {
+            resetPlayback() // cancels the in-flight synthesis; resume re-renders
+        }
+    }
+
+    /** Resumes paused playback from the chunk that was current when paused. */
     fun resume() {
         if (queue.isEmpty()) return
-        enqueueFrom(currentIndex)
+        Log.d(TAG, "resume (paused=$paused) at index=$currentIndex")
+        if (!paused) {
+            player?.let { if (!it.isPlaying) it.start() }
+            return
+        }
+        paused = false
+        if (player != null) {
+            try { player?.start() } catch (_: Exception) { enqueueFrom(currentIndex) }
+        } else {
+            enqueueFrom(currentIndex)
+        }
     }
 
     /**
@@ -291,26 +470,27 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         if (targetPos !in sectionStartIndices.indices) return
 
         val targetIndex = sectionStartIndices[targetPos]
-        currentIndex = targetIndex
         enqueueFrom(targetIndex)
     }
 
     /** Stops playback immediately and signals the stream as finished. */
     fun stop() {
-        engine.stop()
-        generation++
+        Log.d(TAG, "stop (queue=${queue.size})")
+        resetPlayback()
         if (queue.isNotEmpty()) {
             queue = emptyList()
             currentIndex = 0
+            paused = false
             onStreamDone?.invoke()
         }
     }
 
     val isReady: Boolean get() = ready
 
-    /** Releases the TTS engine. Call when the owner is destroyed. */
+    /** Releases the TTS engine and any in-flight playback. Call when the owner is destroyed. */
     fun shutdown() {
-        engine.stop()
+        Log.d(TAG, "shutdown")
+        resetPlayback()
         engine.shutdown()
     }
 
@@ -319,4 +499,3 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         private val TITLE_KEY = Any()
     }
 }
-
