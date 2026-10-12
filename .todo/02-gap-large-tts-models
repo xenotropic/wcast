@@ -279,3 +279,5 @@ MediaPlayer/TextToSpeech, so this needs on-device listening on Pocket TTS
 (especially short-run → long-paragraph and list-heavy articles) plus a sanity
 check on your usual cloud engine (should be unaffected). Ready to implement on
 your go. 
+==reply==
+you are go do as described, 21 on pause and out of scope here now, merge adjacent short can happen subsequently to test separately.
