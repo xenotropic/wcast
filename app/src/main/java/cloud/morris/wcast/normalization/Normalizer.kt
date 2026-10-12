@@ -394,17 +394,22 @@ class Normalizer(private val rules: NormalizationRules) {
         put("km2", "square kilometers"); put("m2", "square meters")
         put("kg", "kilograms")
         put("Hz", "hertz")    // e.g. "25 Hz" -> "25 hertz" (frequency; unambiguous)
+        put("kHz", "kilohertz")  // e.g. "25 kHz" -> "25 kilohertz" (guarded like "m")
+        put("MHz", "megahertz")  // e.g. "25 MHz" -> "25 megahertz" (guarded like "m")
         put("in", "inches")   // e.g. "25.2 in" -> "25.2 inches" (decimal-safe)
         put("m", "meters")    // e.g. "5 m" -> "5 meters"
+        put("t", "tonnes")    // e.g. "190 t" -> "190 tonnes" (tonne; guarded like "m")
     }
 
     /**
-     * Units that are a single letter or a common preposition ("m", "in"). These
-     * are only safe to expand when the unit is *not* followed by another word —
-     * e.g. "5 in total" / "5 m tall" must stay untouched, while "5 in)" or "5 m,"
-     * measure inches/meters. [expandUnits] adds this lookahead for these keys.
+     * Units that are a single letter, a common preposition, or a prefixed
+     * frequency ("m", "in", "t", "kHz", "MHz"). These are only safe to expand
+     * when the unit is *not* followed by another letter — e.g. "5 in total" /
+     * "5 m tall" must stay untouched, while "5 in)", "5 m,", "200 t)", or
+     * "25 MHz," measure inches/meters/tonnes/megahertz. [expandUnits] adds this
+     * lookahead for these keys.
      */
-    private val AMBIGUOUS_UNITS = setOf("m", "in")
+    private val AMBIGUOUS_UNITS = setOf("m", "in", "t", "kHz", "MHz")
 
     /**
      * Rewrites a unit abbreviation into words when it directly follows a number

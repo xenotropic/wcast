@@ -1,3 +1,4 @@
+==Original Issue==
 This is for now a research project, nothing to implement. I'm wondering if you can think through your own capabilities in just reading Wikipedia articles, running them through the existing normalization pipeline that's within this app, and then reviewing the outgoing text for things that don't look like they've been normalized properly. Like you're a large model, so you should have the ability to look at that outputted text and compare it to the inputted text and find things that still look like they're not going to be read correctly. Can you just pull down Wikipedia articles, run them through the normalization pipeline, and then write rules to try to improve on the current normalization pipeline? Obviously, there'd have to be some sort of parameters, like, I don't know, just do five or 10 big articles at a time to have some sort of cost control about how long and how deep this takes, but I just want to see if you can describe how you think that process would work and how good you'd be at it, and if there are any hurdles I'm not thinking of. Right now, the process for improving normalization is me listening to things, taking notes on stuff that's not right when it's actually pronounced. And that'll always be like the most authoritative thing. But it seems like a lot of this could be done just textually by how you (a large language model) would think a TTS would render it, without actually having to do the rendering.  
 
 ==Status Report: 2026-10-11 (research / plan — no implementation)==
@@ -124,4 +125,31 @@ the authoritative check for anything subjective.
 This is a recurring pass I can rerun with different articles whenever you want. 
 ==reply==
 Please implement (a) as to tons, but guard it to ensure that it is preceded by a number, maybe a space, and then immediately afterward there's either a space or a parenthesis. Look at the example for meters as m. These should pretty much be the same. 
-Please implement (b), Again, with location safeguards of being preceded by an integer, possibly a space, and then some sort of punctuation afterward, space, period, parenthesis. Same as the previous one, just making sure we're not in the middle of a word. You can leave this ticket open, but nothing to do besides those two quick implementations. 
+Please implement (b), Again, with location safeguards of being preceded by an integer, possibly a space, and then some sort of punctuation afterward, space, period, parenthesis. Same as the previous one, just making sure we're not in the middle of a word. You can leave this ticket open, but nothing to do besides those two quick implementations.
+
+==Status Report: 2026-10-12 00:10 PDT==
+IMPLEMENTED both requested rules (builds + all tests pass).
+
+(a) tonnes: added `t` → "tonnes" to UNIT_WORDS and added `"t"` to
+    AMBIGUOUS_UNITS, so it expands only when preceded by a digit (+ optional
+    space) and NOT followed by another letter — exactly mirroring the existing
+    "m"/"in" handling. "200 t" → "200 tonnes"; "200 t)" → "200 tonnes)";
+    "200 t," → "200 tonnes,"; but "200 t total" is left alone.
+    (Note: I used "tonnes" to match this ticket's "`t` for tonnes" wording; if
+    you'd rather it read "tons", it's a one-word change in Normalizer.kt.)
+
+(b) frequency prefixes: added `kHz` → "kilohertz" and `MHz` → "megahertz" to
+    UNIT_WORDS, also in AMBIGUOUS_UNITS, so they expand after a number (with
+    optional space) but not when another letter follows. "25 MHz" → "25
+    megahertz"; "25 kHz." → "25 kilohertz."; "25 kHz band" is left alone. I read
+    your "same as the previous one" as wanting the same "not followed by a word"
+    guard the single-letter units use.
+
+Tests: added unit tests in `NormalizerTest` covering both rules, including the
+"followed by a word" negative cases.
+
+Files: `normalization/Normalizer.kt` (UNIT_WORDS + AMBIGUOUS_UNITS),
+`app/src/test/.../NormalizerTest.kt`.
+
+Verified: `./gradlew testDebugUnitTest` and `assembleDebug` pass. Ticket left
+open as instructed. 

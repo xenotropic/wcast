@@ -139,6 +139,33 @@ class NormalizerTest {
     }
 
     @Test
+    fun `expands kilohertz and megahertz after a number`() {
+        assertEquals("25 kilohertz", normalizer.normalize("25 kHz"))
+        assertEquals("25 megahertz", normalizer.normalize("25 MHz"))
+        assertEquals("25 kilohertz.", normalizer.normalize("25 kHz."))
+        assertEquals("25 megahertz)", normalizer.normalize("25 MHz)"))
+    }
+
+    @Test
+    fun `does not expand frequency prefixes followed by a word`() {
+        assertEquals("25 kHz band", normalizer.normalize("25 kHz band"))
+        assertEquals("25 MHz channel", normalizer.normalize("25 MHz channel"))
+    }
+
+    @Test
+    fun `expands tonnes after a number`() {
+        assertEquals("200 tonnes", normalizer.normalize("200 t"))
+        assertEquals("200 tonnes)", normalizer.normalize("200 t)"))
+        assertEquals("200 tonnes,", normalizer.normalize("200 t,"))
+        assertEquals("190 to 200 tonnes)", normalizer.normalize("190\u2013200 t)"))
+    }
+
+    @Test
+    fun `does not expand t when followed by a word`() {
+        assertEquals("200 t total", normalizer.normalize("200 t total"))
+    }
+
+    @Test
     fun `does not expand m when followed by a word`() {
         assertEquals("a 5 m tall building", normalizer.normalize("a 5 m tall building"))
     }
