@@ -144,11 +144,23 @@ class MainViewModel : AndroidViewModel {
         SpeechControllerBridge.onStop = { stopSpeaking() }
         SpeechControllerBridge.onSkipForward = { skipForward() }
         SpeechControllerBridge.onSkipBack = { skipBack() }
+        // Settings' "Reload voice" button reaches the live engine through here.
+        SpeechControllerBridge.onReloadEngine = { speechController.reloadEngine() }
     }
 
     /** Re-reads user preferences so the UI reflects changes made in Settings. */
     fun refreshSettingsFromStore() {
         _playerBarScale.value = settings.playerBarScale
+    }
+
+    /** Rebuilds the TTS engine if the system default engine changed (called on resume). */
+    fun reloadEngineIfChanged() {
+        speechController.reloadEngineIfChanged()
+    }
+
+    /** Force-rebuilds the TTS engine (invoked by the Settings "Reload voice" button). */
+    fun reloadEngine() {
+        speechController.reloadEngine()
     }
 
     fun onQueryChanged(text: String) {

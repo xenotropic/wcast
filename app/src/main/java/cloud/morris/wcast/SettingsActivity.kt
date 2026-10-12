@@ -4,6 +4,7 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.clickable
@@ -23,6 +24,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SettingsVoice
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -33,6 +35,10 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -41,6 +47,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import cloud.morris.wcast.tts.SpeechControllerBridge
 import cloud.morris.wcast.ui.theme.WcastTheme
 import kotlin.math.roundToInt
 
@@ -68,12 +75,13 @@ class SettingsActivity : ComponentActivity() {
                         versionName = BuildConfig.VERSION_NAME,
                         versionCode = BuildConfig.VERSION_CODE,
                         buildTimePt = BuildConfig.BUILD_TIME_PT,
-                        continuity = settings.continuity,
+                        initialContinuity = settings.continuity,
                         onContinuityChange = { settings.continuity = it },
-                        playerBarScale = settings.playerBarScale,
+                        initialPlayerBarScale = settings.playerBarScale,
                         onPlayerBarScaleChange = { settings.playerBarScale = it },
                         onBack = { finish() },
-                        onOpenTtsSettings = ::openTtsSettings
+                        onOpenTtsSettings = ::openTtsSettings,
+                        onReloadVoice = ::reloadVoice
                     )
                 }
             }
@@ -101,6 +109,22 @@ class SettingsActivity : ComponentActivity() {
             }
         }
     }
+
+    /**
+     * Forces the live [SpeechController] to rebuild its TTS engine, picking up a
+     * newly selected engine (or voice) without a force-close. Routed through the
+     * process-wide [SpeechControllerBridge] because the engine lives in the main
+     * screen's ViewModel, not in this activity.
+     */
+    private fun reloadVoice() {
+        val reloaded = SpeechControllerBridge.onReloadEngine?.invoke() ?: false
+        val message = if (reloaded) {
+            "Text-to-speech engine reloaded"
+        } else {
+            "Stop playback first, then reload the voice"
+        }
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+    }
 }
 
 @Composable
@@ -108,13 +132,16 @@ private fun SettingsScreen(
     versionName: String,
     versionCode: Int,
     buildTimePt: String,
-    continuity: Boolean,
+    initialContinuity: Boolean,
     onContinuityChange: (Boolean) -> Unit,
-    playerBarScale: Int,
+    initialPlayerBarScale: Int,
     onPlayerBarScaleChange: (Int) -> Unit,
     onBack: () -> Unit,
-    onOpenTtsSettings: () -> Unit
+    onOpenTtsSettings: () -> Unit,
+    onReloadVoice: () -> Unit
 ) {
+    var continuity by remember { mutableStateOf(initialContinuity) }
+    var playerBarScale by remember { mutableStateOf(initialPlayerBarScale) }
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
@@ -156,6 +183,19 @@ private fun SettingsScreen(
                 subtitle = "Choose your engine and voice in the Android settings",
                 onClick = onOpenTtsSettings
             )
+            SettingsRow(
+                icon = {
+                    Icon(
+                        imageVector = Icons.Filled.Refresh,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                },
+                title = "Reload voice",
+                subtitle = "Re-detect the selected text-to-speech engine and voice",
+                onClick = onReloadVoice
+            )
 
             Spacer(modifier = Modifier.height(24.dp))
             SettingsSection(title = "Playback")
@@ -163,13 +203,19 @@ private fun SettingsScreen(
                 title = "Continue to end",
                 subtitle = "When playing a section, keep reading through the end of the article instead of stopping at the end of the section.",
                 checked = continuity,
-                onCheckedChange = onContinuityChange
+                onCheckedChange = { newValue ->
+                    continuity = newValue
+                    onContinuityChange(newValue)
+                }
             )
             SettingsSliderRow(
                 title = "Player bar size",
                 subtitle = "Scale the size of the playback controls.",
                 value = playerBarScale,
-                onValueChange = onPlayerBarScaleChange
+                onValueChange = { newValue ->
+                    playerBarScale = newValue
+                    onPlayerBarScaleChange(newValue)
+                }
             )
 
             Spacer(modifier = Modifier.height(24.dp))

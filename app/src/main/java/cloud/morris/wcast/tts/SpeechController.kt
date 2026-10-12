@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.os.Bundle
+import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
@@ -57,7 +58,14 @@ data class Utterance(
 class SpeechController(context: Context) : TextToSpeech.OnInitListener {
 
     private val appContext = context.applicationContext
-    private val engine: TextToSpeech = TextToSpeech(appContext, this)
+    private var engine: TextToSpeech = TextToSpeech(appContext, this)
+
+    /**
+     * The package of the TTS engine this controller was (re)built for, read from
+     * the system's current default. Compared against the live system setting on
+     * app resume so we can swap to a newly-selected engine without a force-close.
+     */
+    private var enginePackage: String? = currentDefaultEnginePackage()
 
     /**
      * Normalizes display text into spoken text (Phase 3). Loaded lazily from the
@@ -493,6 +501,48 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         resetPlayback()
         engine.shutdown()
     }
+
+    /**
+     * Rebuilds the [TextToSpeech] engine if the system's default engine has
+     * changed since this controller was built (or last rebuilt). There is no
+     * system broadcast for TTS engine changes, so this is the closest thing to a
+     * listener: the main screen calls it every time it resumes and the engine is
+     * recreated only when the default-engine package differs. Voice changes
+     * *within* the same engine are not reflected by this package check; those are
+     * covered by the explicit [reloadEngine] button in Settings.
+     */
+    fun reloadEngineIfChanged(): Boolean {
+        val current = currentDefaultEnginePackage() ?: return false
+        if (current == enginePackage) return false
+        return rebuildEngine()
+    }
+
+    /** Force-rebuilds the [TextToSpeech] engine (used by the Settings reload button). */
+    fun reloadEngine(): Boolean = rebuildEngine()
+
+    private fun rebuildEngine(): Boolean {
+        // Never tear down the engine while a rendered chunk is actively playing;
+        // the swap wouldn't be audible until the next synthesis anyway, and the
+        // resume auto-detect (or a later button tap) will pick it up when idle.
+        if (player != null && !paused) {
+            Log.w(TAG, "rebuildEngine: refusing while actively playing")
+            return false
+        }
+        val previous = enginePackage
+        enginePackage = currentDefaultEnginePackage()
+        Log.d(TAG, "rebuildEngine: engine $previous -> $enginePackage")
+        ready = false
+        synthInFlight = false
+        synthIndex = null
+        try { engine.stop() } catch (_: Exception) {}
+        try { engine.shutdown() } catch (_: Exception) {}
+        engine = TextToSpeech(appContext, this)
+        return true
+    }
+
+    /** Reads the package name of the system's current default TTS engine, if any. */
+    private fun currentDefaultEnginePackage(): String? =
+        Settings.Secure.getString(appContext.contentResolver, Settings.Secure.TTS_DEFAULT_SYNTH)
 
     private companion object {
         /** Sentinel key marking the article title as its own "section". */

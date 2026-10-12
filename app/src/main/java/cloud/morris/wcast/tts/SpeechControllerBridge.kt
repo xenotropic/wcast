@@ -37,6 +37,13 @@ object SpeechControllerBridge {
     var onSkipBack: (() -> Unit)? = null
 
     /**
+     * Invoked by [cloud.morris.wcast.SettingsActivity]'s "Reload voice" button to
+     * force the live [SpeechController] to rebuild its TTS engine. Returns whether
+     * the rebuild actually happened (false while audio is actively playing).
+     */
+    var onReloadEngine: (() -> Boolean)? = null
+
+    /**
      * Mirrors whether speech is currently in flight (playing or paused-quickly).
      * True while there is a stream to resume; false when fully idle, so a single
      * press maps to "start/resume" vs "stop".

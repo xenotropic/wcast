@@ -100,9 +100,11 @@ fun ArticleScreen(
     val context = LocalContext.current
 
     // Re-read user preferences (e.g. player-bar size) whenever the user returns
-    // from Settings, so the change applies immediately without a restart.
+    // from Settings, so the change applies immediately without a restart. Also
+    // swap in a newly-selected TTS engine (there is no system broadcast for it).
     LifecycleResumeEffect(Unit) {
         viewModel.refreshSettingsFromStore()
+        viewModel.reloadEngineIfChanged()
         onPauseOrDispose { }
     }
 

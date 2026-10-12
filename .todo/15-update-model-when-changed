@@ -1,1 +1,29 @@
-It seems like if I change the TTS model within the system TTS settings, then this app does not pick up that change until I force close it by going to the system android view (swipe gesture from bottom) where you can see all of the apps and swiping up on this one so that it closes. And then if I open it up again after doing that, it will have the new model. But short of that, it just keeps using the same model. If this has to be done by active intervention by the user, that's fine. I guess probably check first if there's some sort of state change that listener that you can do to be updated if there's a new model, where it is more automatic. It also would be very obvious to do it if you're coming back from the settings activity as in the system TTS settings, if you've gone to that activity through this app settings and you're coming back into this app settings, you've probably changed the model or you'd want to check.  If no automatic change is possible, I would also be fine putting it in the settings like reload model button just below where you go to the settings of Android in this app's settings. If no automatic change or manual change is possible, then I guess just write up an analysis of why that's the case and if there's anything to be done here. 
+==Original Issue==
+It seems like if I change the TTS model within the system TTS settings, then this app does not pick up that change until I force close it by going to the system android view (swipe gesture from bottom) where you can see all of the apps and swiping up on this one so that it closes. And then if I open it up again after doing that, it will have the new model. But short of that, it just keeps using the same model. If this has to be done by active intervention by the user, that's fine. I guess probably check first if there's some sort of state change that listener that you can do to be updated if there's a new model, where it is more automatic. It also would be very obvious to do it if you're coming back from the settings activity as in the system TTS settings, if you've gone to that activity through this app settings and you're coming back into this app settings, you've probably changed the model or you'd want to check.  If no automatic change is possible, I would also be fine putting it in the settings like reload model button just below where you go to the settings of Android in this app's settings. If no automatic change or manual change is possible, then I guess just write up an analysis of why that's the case and if there's anything to be done here.
+
+==Status Report: 2026-10-12 00:10 PDT==
+IMPLEMENTED — both an automatic check and a manual reload button.
+
+On your "is there a listener?" question first: Android has NO broadcast for TTS
+engine or voice changes. The only system-level signal is the secure setting
+`tts_default_synth` (the package of the current default *engine*); it changes when
+you switch *engines* but not when you change the *voice* within one engine.
+
+What I did:
+1. Automatic: `SpeechController` records the engine package it was built for. The
+   main screen now calls `reloadEngineIfChanged()` every time it resumes
+   (`LifecycleResumeEffect`). If you switched the default engine in system
+   settings and came back, the controller shuts down and rebuilds `TextToSpeech`
+   so play uses the new engine — no force-close needed. It's a no-op unless the
+   engine actually changed, and it refuses while audio is actively playing.
+2. Manual: a new "Reload voice" row in Settings (right below "Text-to-speech
+   settings") force-rebuilds the engine via the existing `SpeechControllerBridge`.
+   This covers the voice-within-engine case the package check can't see. A toast
+   confirms the reload (or tells you to stop playback first).
+
+Files: `tts/SpeechController.kt` (engine is now `var` + reload methods),
+`MainViewModel.kt`, `tts/SpeechControllerBridge.kt` (new `onReloadEngine`),
+`ui/ArticleScreen.kt` (resume hook), `SettingsActivity.kt` (button + toast).
+
+Verified: `./gradlew assembleDebug` and `testDebugUnitTest` pass. On-device:
+switch engine in Android TTS settings → back → play; and tap "Reload voice". 
