@@ -45,3 +45,26 @@ E. PocketTTS with Aftershokz Aeropex - Absolutely nothing. No response at all. T
 
 F. PocketTTS with ksc30 wireless - Same as with kokoro. first press nothing, second press, antenna pod takes over. 
 
+
+==Status Report (this round)==
+ROOT CAUSE (confirmed from on-device dumpsys): Wcast's audio focus is fine - on play
+it takes GAIN focus and Spotify loses it. The failure is media-button *routing*.
+dumpsys media_session showed `Media button session is com.spotify.music/...` with a
+mediaButtonReceiver set, while Wcast never called MediaSession.setMediaButtonReceiver,
+so the system kept routing headset presses to Spotify (dumpsys audio focus log showed
+Spotify re-requesting focus ~seconds after each Wcast play = Spotify resuming on the
+button press; hence Arama single-press / KOSS double-press flipping to the last player).
+
+FIX: Wcast now registers a media-button receiver exactly like Spotify -
+MediaSession.setMediaButtonReceiver(...) wired to a new manifest MediaButtonReceiver
+(ACTION_MEDIA_BUTTON, exported=false) that forwards the press to
+SpeechControllerBridge.togglePlayPause. Foreground service + active session + focus are
+unchanged. Added WcastMedia logcat lines (receiver delivery, session callback delivery,
+focus changes) so the next round is unambiguous.
+
+RE-TEST (Arama wired, KOSS wireless, Aftershokz): expected is one press pauses Wcast
+(stream retained), next press resumes Wcast, Spotify stays stopped. If any headset still
+misbehaves, capture while it misbehaves and paste the output:
+  adb shell logcat -d -s WcastMedia:V | tail -100
+  adb shell dumpsys media_session | head -60
+  adb shell dumpsys audio | grep -A40 'focus commands'

@@ -55,6 +55,17 @@
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
 
+        <!-- Receives ACTION_MEDIA_BUTTON broadcasts routed to our MediaSession via
+             setMediaButtonReceiver, so wired/Bluetooth headset play/pause presses
+             reach us and are not handed off to the previously-playing media app. -->
+        <receiver
+            android:name=".tts.MediaButtonReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+
         <!-- Receives button taps from the media notification (stop / previous /
              play-pause / next) and routes them to the active media session. -->
         <receiver

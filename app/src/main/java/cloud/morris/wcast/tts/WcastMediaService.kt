@@ -16,8 +16,11 @@ import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import android.view.KeyEvent
 import cloud.morris.wcast.R
+
+private const val TAG = "WcastMedia"
 
 /**
  * A foreground [Service] (started as a media-playback foreground service) that
@@ -114,6 +117,11 @@ class WcastMediaService : Service() {
                 MediaSession.FLAG_HANDLES_MEDIA_BUTTONS or
                     MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS
             )
+            // Register the media-button receiver so the system routes a
+            // wired/Bluetooth headset button to *us* as an ACTION_MEDIA_BUTTON
+            // broadcast. Without this, the previously-playing media app (Spotify)
+            // stays the media-button target and starts on our button press.
+            setMediaButtonReceiver(mediaButtonPendingIntent())
             setCallback(sessionCallback)
         }
     }
@@ -123,6 +131,7 @@ class WcastMediaService : Service() {
             override fun onMediaButtonEvent(mediaButtonIntent: Intent): Boolean {
                 val keyEvent = mediaButtonIntent.keyEvent()
                     ?: return super.onMediaButtonEvent(mediaButtonIntent)
+                Log.d(TAG, "session onMediaButtonEvent: keyCode=${keyEvent.keyCode} action=${keyEvent.action}")
                 if (keyEvent.action != KeyEvent.ACTION_DOWN) {
                     return super.onMediaButtonEvent(mediaButtonIntent)
                 }
@@ -165,7 +174,19 @@ class WcastMediaService : Service() {
         SpeechControllerBridge.togglePlayPause()
     }
 
+    private fun mediaButtonPendingIntent(): PendingIntent {
+        val intent = Intent(this, MediaButtonReceiver::class.java)
+            .setAction(Intent.ACTION_MEDIA_BUTTON)
+        return PendingIntent.getBroadcast(
+            this,
+            0,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
     private fun onAudioFocusChanged(focusChange: Int) {
+        Log.d(TAG, "audio focus change: $focusChange (hasFocus=$hasFocus)")
         when (focusChange) {
             AudioManager.AUDIOFOCUS_GAIN -> {
                 hasFocus = true
