@@ -123,6 +123,15 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
     /** The queue index whose synthesis is in flight, valid only when [synthInFlight]. */
     private var synthIndex: Int? = null
 
+    /**
+     * The queue index of a chunk that has finished rendering (look-ahead) but is
+     * not yet playing because the previous chunk is still audible. Null when no
+     * pre-rendered chunk is waiting. This is what removes the per-paragraph
+     * synthesis gap: the next chunk is rendered while the current one plays
+     * rather than only after it finishes (ticket 02).
+     */
+    private var readyToPlayIndex: Int? = null
+
     /** Directory holding the rendered WAV files for the current stream. */
     private val synthDir: File = File(appContext.cacheDir, "synth")
 
@@ -231,16 +240,23 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
     /** (Re-)renders [queue] starting at [fromIndex] (inclusive). */
     private fun enqueueFrom(fromIndex: Int) {
         resetPlayback()
+        currentIndex = fromIndex
         beginSynthesis(fromIndex)
     }
 
-    /** Renders utterance [index] to a WAV file; playback begins in [onSynthDone]. */
+    /**
+     * Renders utterance [index] to a WAV file; playback begins in [onSynthDone].
+     *
+     * Does NOT touch [currentIndex]: the play head is the caller's
+     * responsibility ([startQueue], [enqueueFrom], [advanceAfterUtterance]). This
+     * lets the look-ahead path pre-render chunk N+1 while chunk N is still the
+     * play head (ticket 02).
+     */
     private fun beginSynthesis(index: Int) {
         if (index !in queue.indices) {
             finishStream()
             return
         }
-        currentIndex = index
         val gen = generation
         val utterance = queue[index]
         val utteranceId = "tts-$gen-$index-${System.currentTimeMillis()}-${System.nanoTime()}"
@@ -268,7 +284,14 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         synthInFlight = false
         synthIndex = null
         Log.d(TAG, "onSynthDone gen=$gen index=$index")
-        playFile(gen, index)
+        if (player == null) {
+            // Nothing is audible yet, so this rendered chunk becomes the play head.
+            playFile(gen, index)
+        } else {
+            // This was a look-ahead render (chunk N+1) that finished while chunk N
+            // is still playing; hold it until N ends (ticket 02).
+            readyToPlayIndex = index
+        }
     }
 
     private fun onSynthError(utteranceId: String?) {
@@ -278,7 +301,13 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         synthInFlight = false
         synthIndex = null
         Log.w(TAG, "onSynthError gen=$gen index=$index")
-        advanceAfterUtterance(gen, index)
+        if (player == null) {
+            // The chunk we were about to play failed to render; skip past it.
+            advanceAfterUtterance(gen, index)
+        }
+        // Else: a look-ahead pre-render failed. Nothing to do — the chunk is
+        // simply not pre-rendered and will be synthesized on demand when the
+        // current chunk finishes (advanceAfterUtterance's fallback branch).
     }
 
     /** Plays the previously rendered WAV for utterance [index] from our own process. */
@@ -325,7 +354,27 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
             try { mp.release() } catch (_: Exception) {}
             player = null
             onFileError(gen, index)
+            return
         }
+        // Prime the next chunk's render now that this one's audio is actually
+        // going, so the paragraph boundary has no synthesis gap (ticket 02). Kept
+        // OUT of the try block above so a surprise pre-render exception can't be
+        // mistaken for a failure of the chunk we just started playing.
+        maybePrimeLookAhead(index)
+    }
+
+    /**
+     * Starts rendering the chunk after [playedIndex] while it is still playing, so
+     * the next paragraph is ready the moment the current one ends (ticket 02).
+     * Only one chunk is pre-rendered at a time; if a synthesis is already in
+     * flight, or [playedIndex + 1] is already rendered, nothing extra is started.
+     */
+    private fun maybePrimeLookAhead(playedIndex: Int) {
+        val next = playedIndex + 1
+        if (next >= queue.size) return
+        if (synthInFlight) return
+        if (readyToPlayIndex == next) return
+        beginSynthesis(next)
     }
 
     private fun onFileDone(gen: Int, index: Int) = advanceAfterUtterance(gen, index)
@@ -340,6 +389,15 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         if (currentIndex >= queue.size) {
             Log.d(TAG, "stream finished after index=$index (${queue.size} utterances)")
             finishStream()
+        } else if (readyToPlayIndex == currentIndex) {
+            // The look-ahead pre-render for this chunk already finished (ticket 02);
+            // play it immediately so the paragraph boundary has no synthesis gap.
+            readyToPlayIndex = null
+            playFile(gen, currentIndex)
+        } else if (synthInFlight && synthIndex == currentIndex) {
+            // The pre-render is still in flight (slow-synthesis engines): wait for
+            // onSynthDone to hand us a playable file rather than re-synthesizing.
+            Log.d(TAG, "advanceAfterUtterance: awaiting in-flight render index=$currentIndex")
         } else {
             beginSynthesis(currentIndex)
         }
@@ -357,6 +415,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         releasePlayer()
         synthInFlight = false
         synthIndex = null
+        readyToPlayIndex = null
         engine.stop()
         clearSynthDir()
     }
@@ -534,6 +593,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         ready = false
         synthInFlight = false
         synthIndex = null
+        readyToPlayIndex = null
         try { engine.stop() } catch (_: Exception) {}
         try { engine.shutdown() } catch (_: Exception) {}
         engine = TextToSpeech(appContext, this)

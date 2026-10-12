@@ -1,4 +1,4 @@
-d==Original Issue==
+==Original Issue==
 Larger TTS models (Whether cloud-based or local, "large" relative to the phone) tend to have a large delay at the beginning of each paragraph. Certainly for the first paragraph, this is unavoidable, but for subsequent paragraphs, in order to prevent that gap, I'm wondering is there any way that we can throw those paragraphs out to the TTS model or to the service sooner so that there is less of a gap?
 
 ==Status Report: 2026-10-10 21:10 PDT==
@@ -157,4 +157,45 @@ the smallest first step is a tiny probe (pre-render a single paragraph to file a
 `addSpeech` it) to confirm Pocket TTS's `synthesizeToFile` output is acceptable,
 then I build the look-ahead on top.
 ==reply==
-Since the prior analysis above from you there's been code refactoring in ticket 09 media button which at least right now has made this issue worse. It seems like Pocket TTS where the delay is most noticeable is not rendering each paragraph until it's time to play it but then it takes a good while to render it longer than 5-7 seconds, it is now more like 20 to 30 so that makes it sound like maybe the other TTS engine (when it was the media player) was enqueuing them somehow. These longer delays are clearly not a hardware limitation because it was doing it faster before we did the refactor to WAV files in 09 where this app became the renderer rather than deferring to the underlying TTS engine applications. But in any event take a look at this in light of the current architecture and see if there's anything you can do in order to improve queuing. Obviously if the user has pressed play on a new section it's unavoidable that there's going to be a delay because the program didn't know that that's what they were going to listen to. But if we have a situation where someone's just playing straight through the entire article, then it seems like it should be foreseeable enough to be able to start rendering the next file before the current one finishes playing. 
+Since the prior analysis above from you there's been code refactoring in ticket 09 media button which at least right now has made this issue worse. It seems like Pocket TTS where the delay is most noticeable is not rendering each paragraph until it's time to play it but then it takes a good while to render it longer than 5-7 seconds, it is now more like 20 to 30 so that makes it sound like maybe the other TTS engine (when it was the media player) was enqueuing them somehow. These longer delays are clearly not a hardware limitation because it was doing it faster before we did the refactor to WAV files in 09 where this app became the renderer rather than deferring to the underlying TTS engine applications. But in any event take a look at this in light of the current architecture and see if there's anything you can do in order to improve queuing. Obviously if the user has pressed play on a new section it's unavoidable that there's going to be a delay because the program didn't know that that's what they were going to listen to. But if we have a situation where someone's just playing straight through the entire article, then it seems like it should be foreseeable enough to be able to start rendering the next file before the current one finishes playing.
+
+==Status Report: 2026-10-12 00:15 PDT==
+IMPLEMENTED — one-paragraph look-ahead (builds + all tests pass). This directly
+addresses your last reply: when playing straight through, the next paragraph is
+now rendered *while* the current one plays, instead of only after it ends.
+
+What changed (all in `tts/SpeechController.kt`):
+  • As soon as a chunk's audio actually starts (`playFile`), the controller kicks
+    off synthesis of the NEXT chunk in the background (`maybePrimeLookAhead`),
+    while the current chunk keeps playing.
+  • When that look-ahead render finishes it is stashed (`readyToPlayIndex`), and
+    when the current chunk ends it is played immediately — no synthesis wait at
+    the paragraph boundary.
+  • If the look-ahead is still rendering when the current chunk ends (a genuinely
+    slow engine), we wait for it rather than double-rendering, and fall back to
+    on-demand synthesis only when no pre-render was in flight.
+  • All the existing behavior (per-paragraph position highlight/scroll, pause →
+    true MediaPlayer pause, resume, skip by section, stop) is preserved: the play
+    head (`currentIndex`) still advances only when a chunk becomes audible, so the
+    left margin and skip logic are unaffected. Pause/resume/skip/stop all clear
+    the pre-render state safely.
+
+Net effect: the per-paragraph delay becomes `max(synthesis, playback)` overlap
+instead of `synthesis + playback` serialized. For engines where synthesis is
+slower than playback (your Pocket TTS 20–30 s), a *single* paragraph of
+look-ahead may not fully hide the gap if one paragraph's speech is shorter than
+its render time; note the queue still re-verifies "render N+1 while N plays"
+exactly as you described.
+
+Honest scope note / possible follow-up: this is look-ahead of ONE. If Pocket TTS
+is still gappy because each paragraph renders longer than it takes to speak, the
+next step is a deeper look-ahead (pre-render 2–3 paragraphs ahead while playing),
+which needs a small set of in-flight render indices instead of the single
+`readyToPlayIndex`. I kept it to one chunk to stay low-risk to the pause/resume/
+skip paths. I can extend it to multi-chunk if you say the single look-ahead isn't
+enough after listening.
+
+Verified: `./gradlew assembleDebug` and `testDebugUnitTest` pass. No JVM unit
+test can cover the MediaPlayer/TextToSpeech lifecycle, so this needs on-device
+confirmation on Pocket TTS (and a sanity check on your usual cloud engine, which
+should be unaffected). Leaving the ticket open for your review. 
