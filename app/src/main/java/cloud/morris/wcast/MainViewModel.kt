@@ -9,8 +9,9 @@ import cloud.morris.wcast.data.SearchResult
 import cloud.morris.wcast.data.SearchSuggestion
 import cloud.morris.wcast.data.WikipediaRepository
 import cloud.morris.wcast.data.subtreeOf
-import cloud.morris.wcast.tts.MediaButtonHandler
 import cloud.morris.wcast.tts.SpeechController
+import cloud.morris.wcast.tts.SpeechControllerBridge
+import cloud.morris.wcast.tts.WcastMediaService
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -83,8 +84,6 @@ class MainViewModel : AndroidViewModel {
 
     private val speechController = SpeechController(getApplication<Application>())
 
-    private val mediaButtonHandler = MediaButtonHandler(getApplication<Application>())
-
     private val settings = SettingsStore(getApplication<Application>())
 
     private val bookmarkStore = BookmarkStore(getApplication<Application>())
@@ -121,7 +120,8 @@ class MainViewModel : AndroidViewModel {
         speechController.onStreamDone = {
             _speakingState.value = SpeakingState.None
             _activePosition.value = null
-            mediaButtonHandler.onPlaybackStopped()
+            SpeechControllerBridge.updateState(active = false, playing = false)
+            WcastMediaService.active?.onPlaybackFinished()
         }
         // Track which section is actively being spoken so skips highlighting and
         // per-section affordances stay accurate during whole-article playback.
@@ -136,15 +136,14 @@ class MainViewModel : AndroidViewModel {
             // Maintain the saved play location for a bookmarked article as it plays.
             persistPositionIfBookmarked(sectionId, utterance.paragraphIndex)
         }
-        // A press of the wired/Bluetooth headset "main" button stops speech.
-        mediaButtonHandler.onMainButtonPressed = { stopSpeaking() }
-        // Losing audio focus (call, or another app taking over) also stops speech.
-        mediaButtonHandler.onFocusLost = { stopSpeaking() }
-        // Media-notification / drawer transport controls route back here.
-        mediaButtonHandler.onStopPressed = { stopSpeaking() }
-        mediaButtonHandler.onPreviousPressed = { skipBack() }
-        mediaButtonHandler.onNextPressed = { skipForward() }
-        mediaButtonHandler.onPlayPausePressed = { togglePause() }
+        // The MediaSessionService reaches the live TTS engine through this bridge.
+        // A single media-button press toggles pause/resume (like a podcast app);
+        // an explicit stop or losing focus stops speech.
+        SpeechControllerBridge.onPause = { pauseSpeaking() }
+        SpeechControllerBridge.onResume = { resumeSpeaking() }
+        SpeechControllerBridge.onStop = { stopSpeaking() }
+        SpeechControllerBridge.onSkipForward = { skipForward() }
+        SpeechControllerBridge.onSkipBack = { skipBack() }
     }
 
     /** Re-reads user preferences so the UI reflects changes made in Settings. */
@@ -223,7 +222,7 @@ class MainViewModel : AndroidViewModel {
         }
         speechController.speakArticle(state.title, state.sections)
         _speakingState.value = SpeakingState.WholeArticle
-        mediaButtonHandler.onPlaybackStarted(state.title)
+        onPlaybackStarted(state.title)
     }
 
     /** Reads a single section by its id, or stops if it is already playing. */
@@ -254,7 +253,7 @@ class MainViewModel : AndroidViewModel {
         }
         speechController.speakSections(sectionsToSpeak)
         _speakingState.value = SpeakingState.Section(id)
-        mediaButtonHandler.onPlaybackStarted(state.title)
+        onPlaybackStarted(state.title)
     }
 
     /**
@@ -274,7 +273,23 @@ class MainViewModel : AndroidViewModel {
         val following = if (settings.continuity) state.sections.drop(index + 1) else emptyList()
         speechController.speakFromParagraph(section, paragraphIndex, following)
         _speakingState.value = SpeakingState.Section(sectionId)
-        mediaButtonHandler.onPlaybackStarted(state.title)
+        onPlaybackStarted(state.title)
+    }
+
+    /**
+     * Starts (or restarts) the foreground [WcastMediaService] and tells it and the
+     * [SpeechControllerBridge] that speech is now actively playing, so a single
+     * media-button press will pause (and the next one resume).
+     */
+    private fun onPlaybackStarted(title: String?) {
+        // Start the service with the play command in the intent so that on the
+        // *first* play (when `active` is still null) the once-created service
+        // still applies focus + session state in onStartCommand. The direct
+        // call below is the synchronous fast path for later plays, which wins
+        // the race against the TTS engine grabbing its own duck focus.
+        WcastMediaService.startService(getApplication(), title)
+        SpeechControllerBridge.updateState(active = true, playing = true)
+        WcastMediaService.active?.onPlaybackStarted(title)
     }
 
     /** Stops any ongoing speech and clears the speaking state. */
@@ -282,7 +297,8 @@ class MainViewModel : AndroidViewModel {
         speechController.stop()
         _speakingState.value = SpeakingState.None
         _activePosition.value = null
-        mediaButtonHandler.onPlaybackStopped()
+        SpeechControllerBridge.updateState(active = false, playing = false)
+        WcastMediaService.active?.onPlaybackStopped()
     }
 
     /** Pauses the current playback in place (resume restarts the current chunk). */
@@ -301,7 +317,8 @@ class MainViewModel : AndroidViewModel {
         // Pause is "stop-like" (resume restarts the current chunk), so the
         // reading indicator disappears while paused, mirroring that behavior.
         _activePosition.value = null
-        mediaButtonHandler.onPlaybackPaused()
+        SpeechControllerBridge.updateState(active = true, playing = false)
+        WcastMediaService.active?.onPlaybackPaused()
     }
 
     /** Resumes paused playback from the chunk that was current when paused. */
@@ -318,7 +335,10 @@ class MainViewModel : AndroidViewModel {
             else -> Unit
         }
         // Re-acquire focus (it may have been abandoned) and mark as playing.
-        mediaButtonHandler.onPlaybackStarted((_uiState.value as? UiState.Article)?.title)
+        SpeechControllerBridge.updateState(active = true, playing = true)
+        val title = (_uiState.value as? UiState.Article)?.title
+        WcastMediaService.startService(getApplication(), title)
+        WcastMediaService.active?.onPlaybackStarted(title)
     }
 
     /** Toggles between paused and playing for the current stream. */
@@ -464,7 +484,7 @@ class MainViewModel : AndroidViewModel {
         val following = state.sections.drop(index + 1)
         speechController.speakFromParagraph(section, paragraphIndex, following)
         _speakingState.value = SpeakingState.Section(sectionId)
-        mediaButtonHandler.onPlaybackStarted(state.title)
+        onPlaybackStarted(state.title)
     }
 
     /** Dismisses the resume prompt without starting playback. */
@@ -482,7 +502,7 @@ class MainViewModel : AndroidViewModel {
 
     override fun onCleared() {
         speechController.shutdown()
-        mediaButtonHandler.release()
+        SpeechControllerBridge.updateState(active = false, playing = false)
         super.onCleared()
     }
 }

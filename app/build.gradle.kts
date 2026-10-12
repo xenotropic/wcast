@@ -14,7 +14,7 @@ android {
 
     defaultConfig {
         applicationId = "cloud.morris.wcast"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 34
         versionCode = 1
         // Defaults to 0.1 for local/pre-release builds. CI overrides this with

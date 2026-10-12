@@ -1,6 +1,7 @@
 package cloud.morris.wcast.tts
 
 import android.content.Context
+import android.media.AudioAttributes
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
@@ -90,6 +91,19 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         ready = status == TextToSpeech.SUCCESS
         if (ready) {
             engine.language = Locale.getDefault()
+            // Play as ordinary *media* (music stream), not as a navigation/TTS
+            // guidance prompt. By default many TTS engines request a "duck"
+            // focus (AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK), which lowers other
+            // apps instead of stopping them — producing the two-streams-at-once
+            // symptom. Declaring media usage lets Wcast (via the media session +
+            // audio focus in WcastMediaService) behave like Spotify/AntennaPod:
+            // starting our stream stops the other one.
+            engine.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
             engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) = onUtteranceStarted(utteranceId)
 

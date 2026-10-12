@@ -156,3 +156,5 @@ This stays a research ticket for now; I have not changed code. When you're ready
 the smallest first step is a tiny probe (pre-render a single paragraph to file and
 `addSpeech` it) to confirm Pocket TTS's `synthesizeToFile` output is acceptable,
 then I build the look-ahead on top.
+==reply==
+That sounds good. I like your concrete plan of three steps. I'm a little confused by the ending which has the smallest first step. I'm not sure how there is a small step. It seems like either you're caching a file or you're not. I'll leave it to your discretion, but do something here. Either do a small step if you think there's one that is worth testing without doing a lot of implementation, or you have pretty good confidence, then try doing the three-step concrete plan. 

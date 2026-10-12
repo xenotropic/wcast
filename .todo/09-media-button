@@ -29,3 +29,19 @@ Android keeps routing media keys to us while backgrounded.
 
 Please re-test with the wired headset, the Koss KSC30, and the Aftershokz and
 let me know which (if any) still miss.
+==reply==
+Does still remain such a mess, but hopefully there's so many different things happening here that we'll be able to give you information about what to do. There seems to be differences both by wired or non-wired and also about how large and slow the model is. A lot of this relates to the interactions with other apps which start playing, but it seems to occur the same with Spotify and Antennapod. It just depends on whichever one was the last app prior to Wcast that I was listening to. 
+With Pocket TTS, which is probably just at real time on my device
+
+A. kokoro with Arama wired headset - A single button press while this app is playing causes the last app that played sound to take over. This is true with both Spotify and Antennapod. That seems like it's maybe customary to hang on to some sort of stream or control that you are letting go of so that the last one in the queue takes it over. The desired behavior, of course, is that sound stops completely, and then I think if we press the button again, we should still have the stream and start over someplace, beginning of the last paragraph. 
+
+B. kokoro with Aftershokz Aeropex. Absolutely nothing happens. Our app continues playing. Once I manually pause our app and then press its media button, then the prior media app that was registered plays. Happened to be AntennaPod. 
+
+C. kokoro with koss ksc30 wireless. On the first press, nothing happens. On the second press, it does the same thing as the Arama wired headset. This app stops and the other apps sound that is sort of in this media player stack (Antennapod) starts playing.
+
+D. PocketTTS with Arama wired headset - same as with kokoro
+
+E. PocketTTS with Aftershokz Aeropex - Absolutely nothing. No response at all. This device does give beep feedback, so I can hear it responding, I think, as a hardware device to my presses, but there's no reaction. However, when I take it to other apps, so if I put Antennapod and Spotify in the foreground, press play on them manually, from that point onward, single presses here start and stop their play. So it seems like and interaction between this device and this phone around this media player sort of thing is possible, but it's just somehow not working for this app. 
+
+F. PocketTTS with ksc30 wireless - Same as with kokoro. first press nothing, second press, antenna pod takes over. 
+
