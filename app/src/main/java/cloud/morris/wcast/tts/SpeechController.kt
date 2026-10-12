@@ -124,13 +124,14 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
     private var synthIndex: Int? = null
 
     /**
-     * The queue index of a chunk that has finished rendering (look-ahead) but is
-     * not yet playing because the previous chunk is still audible. Null when no
-     * pre-rendered chunk is waiting. This is what removes the per-paragraph
-     * synthesis gap: the next chunk is rendered while the current one plays
-     * rather than only after it finishes (ticket 02).
+     * Finished chunks that have been rendered (look-ahead) but are not yet
+     * playing because an earlier chunk is still audible, kept in ascending index
+     * order (a FIFO of the play head). This is what removes the per-paragraph
+     * synthesis gap: several chunks are rendered while the current one plays,
+     * instead of only one (ticket 02). Bounded by [LOOK_AHEAD] via
+     * [topUpLookAhead].
      */
-    private var readyToPlayIndex: Int? = null
+    private val readyIndices = ArrayDeque<Int>()
 
     /** Directory holding the rendered WAV files for the current stream. */
     private val synthDir: File = File(appContext.cacheDir, "synth")
@@ -288,9 +289,10 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
             // Nothing is audible yet, so this rendered chunk becomes the play head.
             playFile(gen, index)
         } else {
-            // This was a look-ahead render (chunk N+1) that finished while chunk N
-            // is still playing; hold it until N ends (ticket 02).
-            readyToPlayIndex = index
+            // A look-ahead render finished while an earlier chunk is still
+            // playing; buffer it in play order (ticket 02).
+            readyIndices.addLast(index)
+            topUpLookAhead()
         }
     }
 
@@ -356,25 +358,33 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
             onFileError(gen, index)
             return
         }
-        // Prime the next chunk's render now that this one's audio is actually
-        // going, so the paragraph boundary has no synthesis gap (ticket 02). Kept
-        // OUT of the try block above so a surprise pre-render exception can't be
-        // mistaken for a failure of the chunk we just started playing.
-        maybePrimeLookAhead(index)
+        // Top up the look-ahead buffer now that this chunk's audio is actually
+        // going, so the paragraph boundaries have no synthesis gap (ticket 02).
+        // Kept OUT of the try block above so a surprise pre-render exception
+        // can't be mistaken for a failure of the chunk we just started playing.
+        topUpLookAhead()
     }
 
     /**
-     * Starts rendering the chunk after [playedIndex] while it is still playing, so
-     * the next paragraph is ready the moment the current one ends (ticket 02).
-     * Only one chunk is pre-rendered at a time; if a synthesis is already in
-     * flight, or [playedIndex + 1] is already rendered, nothing extra is started.
+     * Starts one look-ahead render if the serialized synthesis slot is free and
+     * the frontier is still under the horizon. Called after a chunk starts
+     * playing ([playFile]) and after each synthesis completes ([onSynthDone]) so
+     * the render pipeline never idles while there's room under the horizon
+     * (ticket 02).
+     *
+     * The engine serializes [TextToSpeech.synthesizeToFile], so only one chunk
+     * renders at a time and a single conditional is enough — the next render is
+     * kicked off by the following [onSynthDone]. The frontier is the highest
+     * index already rendered or in flight plus one; the play head ([currentIndex])
+     * is always rendered, so the frontier never re-renders the current chunk.
      */
-    private fun maybePrimeLookAhead(playedIndex: Int) {
-        val next = playedIndex + 1
-        if (next >= queue.size) return
+    private fun topUpLookAhead() {
         if (synthInFlight) return
-        if (readyToPlayIndex == next) return
-        beginSynthesis(next)
+        val horizon = minOf(currentIndex + LOOK_AHEAD, queue.size - 1)
+        val highest = maxOf(currentIndex, readyIndices.lastOrNull() ?: -1)
+        val frontier = highest + 1
+        if (frontier > horizon) return
+        beginSynthesis(frontier)
     }
 
     private fun onFileDone(gen: Int, index: Int) = advanceAfterUtterance(gen, index)
@@ -389,10 +399,10 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         if (currentIndex >= queue.size) {
             Log.d(TAG, "stream finished after index=$index (${queue.size} utterances)")
             finishStream()
-        } else if (readyToPlayIndex == currentIndex) {
+        } else if (readyIndices.isNotEmpty() && readyIndices.first() == currentIndex) {
             // The look-ahead pre-render for this chunk already finished (ticket 02);
             // play it immediately so the paragraph boundary has no synthesis gap.
-            readyToPlayIndex = null
+            readyIndices.removeFirst()
             playFile(gen, currentIndex)
         } else if (synthInFlight && synthIndex == currentIndex) {
             // The pre-render is still in flight (slow-synthesis engines): wait for
@@ -415,7 +425,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         releasePlayer()
         synthInFlight = false
         synthIndex = null
-        readyToPlayIndex = null
+        readyIndices.clear()
         engine.stop()
         clearSynthDir()
     }
@@ -593,7 +603,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         ready = false
         synthInFlight = false
         synthIndex = null
-        readyToPlayIndex = null
+        readyIndices.clear()
         try { engine.stop() } catch (_: Exception) {}
         try { engine.shutdown() } catch (_: Exception) {}
         engine = TextToSpeech(appContext, this)
@@ -607,5 +617,8 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
     private companion object {
         /** Sentinel key marking the article title as its own "section". */
         private val TITLE_KEY = Any()
+
+        /** Number of finished chunks to keep buffered ahead of the play head (ticket 02). */
+        private const val LOOK_AHEAD = 3
     }
 }
