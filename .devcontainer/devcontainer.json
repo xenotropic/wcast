@@ -1,6 +1,8 @@
 {
   "name": "Wcast Android Sandbox",
-  "image": "mcr.microsoft.com/devcontainers/java:17-bullseye",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
   "customizations": {
     "vscode": {
       "extensions": [
@@ -10,5 +12,9 @@
       ]
     }
   },
-  "remoteUser": "vscode"
+  "remoteUser": "vscode",
+  "mounts": [
+    "source=wcast-vscode-server,target=/home/vscode/.vscode-server,type=volume"
+  ],
+  "postStartCommand": "sudo iptables -A OUTPUT -p tcp --dport 5555 -j DROP"
 }

@@ -57,7 +57,7 @@ this project is versioned, built, and committed.
   (e.g. `0.1`, `0.2`, `0.3`, ...). These are debug APKs built from `v*` tags.
 - **`1.0` is reserved** for the first release published on Google Play.
   Do not use `1.0` (or higher) until then.
-- `app/build.gradle.kts` defaults `versionName` to `0.1`. CI overrides it from
+- `app/build.gradle.kts` defaults `versionName` to `0.4`. CI overrides it from
   the pushed tag (`-PversionName=<tag without the leading "v">`).
 - `versionCode` is currently hardcoded to `1`.
 - **Keep the build identity in sync (IMPORTANT).** The in-app About screen
