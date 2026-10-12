@@ -17,7 +17,7 @@ this project is versioned, built, and committed.
 
 ## Git & CI conventions (IMPORTANT — must be followed)
 
-1. **Commit locally only.** Never run `git push` unless the user explicitly
+1. **Commit locally only.** Never run `git push` unless the user (or another rule here, see e.g., 6) explicitly
    instructs you to push to the remote.
 2. **Never create or push tags** unless the user explicitly instructs you to.
 3. **Remote builds happen only on `v*` tags.** The GitHub Actions workflow
@@ -30,6 +30,9 @@ this project is versioned, built, and committed.
    signing configs or secrets here unless explicitly asked.
 5. Do not commit build artifacts, local config, or anything already listed in
    `.gitignore`.
+6. The directory .todo is in the repository and (exception to point 1) 
+   is tracked and should be kept in sync (pull at start of job / push   at end) 
+   on each turn by agents unless something else instructs you not to. 
 
 ## Building & validating changes locally (IMPORTANT)
 
