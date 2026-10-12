@@ -85,3 +85,217 @@ Open questions (need your call before I build)
    delete, re-render), or stay tucked behind bookmarks?
 5. Icon/label and exact placement (bookmarks row vs. article overflow menu) —
    low priority, but I'd like your read.
+   ==reply==
+   1 - Yes, absolutely, AAC in m4a
+   2 - I do like the idea of having an export file option. So that seems to lead towards single file + cue table. The only doubt is about taking on Exoplayer now, so I think I need really a write-up of what that looks like, benefits and costs. I also want to hear what that sounds like for the existing functionality. Like I just want pre-render to be an optional add-on. All of the current functionality seems fine (Well, other than skip forward and back, which I still have to test and report as an issue, but that's minor and can be ignored except as "might be a minor benfit to exoplayer"). I really don't know what Exoplayer is other than sort of your comments in passing in the past, so make part of this just an overview of what it is, what it does, how big it is, what it's intended for.   
+   3 - Let's just do whole article only, If you get into per section, then it's like more UI clutter around that. If you want to listen to a single section, just do that on the fly. 
+   4 - Yes, + save to file system. (Another permission, but it's optional, explainable, can happen At the time of first request to save)
+   5 - I think I would actually like it to be inside the bookmarks menu. I think this is something I really only want for people who are a little bit more sophisticated. I don't want it to be the out of the box. I want it to be like after you've tried it a little bit, and then you're like, oh, I would like to save these things. So you'll go in, you bookmark first, and then you can go to all your bookmarks, and there's going to be an icon to do this, and maybe you could research and propose some icons for things that mean like compute or render. It will then have to maybe transition to a processing icon while it's actually happening, and then I guess it would turn into . . . a trash can, that  you can delete it. And then at all times the user just taps on the article name in the bookmark view or just goes to it and the pre-render will be used to play. There probably should be some notification to the user of when it is a pre-rendered version. You will also have to block all other UI elements while rendering is happening. I'm sure there's some super phones that can render two streams at once, but we don't want to do that. I think this probably still needs some refinement, but those are some ideas and see if we can come up with a UI plan around those ideas.  
+
+==Status Report: 2026-10-12 08:52 PDT (research/planning only — no code)==
+
+Answers locked in from your reply
+---------------------------------
+1. Format: AAC-in-M4A (platform codec, no new encoder). Confirmed.
+2. Single file + sidecar cue table, with an export-to-file option. Confirmed —
+   this is option (A) from the earlier write-up. (Details below.)
+3. Whole article only. Confirmed — no per-section UI.
+4. App-private storage by default, plus an explicit "save to file system"
+   action. Confirmed — and good news: with the modern Storage Access Framework
+   this needs NO runtime permission (details below).
+5. Placement: inside the Bookmarks screen, behind a per-row icon. Confirmed.
+   Full UI plan below.
+
+The one thing I still owe you is the ExoPlayer write-up. Here it is, then the
+concrete plan built on top of your answers.
+
+ExoPlayer / Media3 — what it actually is
+----------------------------------------
+ExoPlayer is Google's open-source media player for Android. (Its modern name is
+"Media3"; the `androidx.media3` libraries are the current home of ExoPlayer.)
+It is *not* a media app — it is a playback engine/library you embed, the same
+way AntennaPod, Podcast Addict, NewPipe, and VLC-on-Android embed it. Today our
+app uses the OS's built-in `android.media.MediaPlayer` to play each rendered
+WAV; ExoPlayer is the heavier, more capable alternative that sits in the same
+slot.
+
+What it is intended for / what it does that matters to us
+---------------------------------------------------------
+- Precise, sample-accurate seeking inside a media file. This is the big one for
+  pre-render: "skip to the next paragraph" becomes `player.seekTo(cueOffsetMs)`
+  — instant and gapless — instead of today's "stop and re-render from an index."
+- It reads media through the same platform `MediaExtractor`/`MediaCodec` stack,
+  so it plays AAC-in-M4A natively with correct timestamps (including the
+  encoder-delay "edit list", which is where naive position math drifts).
+- It is built around a `Player` interface with a listener that reports
+  position/state; you attach a `MediaSession` (and a `MediaSessionService`) and
+  get the lock-screen + notification + Bluetooth transport for free, with a
+  real seek bar and buffered position. This is the "podcast-like" end state
+  ticket 09 flagged.
+- Speed control, gapless concatenation, and per-media-item playlists fall out of
+  the same API (not needed for v1, but free later).
+
+How big it is
+-------------
+It is the single largest dependency we would add. The core `media3-exoplayer`
+library plus its `media3-common` / `media3-datasource` companions adds on the
+order of ~2–4 MB to the APK (more if we also adopt `media3-session` for the
+`MediaSessionService`, and `media3-ui` for a canned player view — which we would
+NOT, since our UI is Compose). This is a real, measurable cost against the
+"small-ish APK" goal, and it is the main reason I am not recommending we pull it
+in for v1 (below). If it ever matters, the exact delta is a one-line build away
+from being measured.
+
+Benefits (adopting ExoPlayer/Media3 for the pre-rendered path)
+--------------------------------------------------------------
+- True skip-forward/back by paragraph (seek to cue offset) — fixes the one thing
+  you flagged as still-rough in current playback.
+- Robust background playback + a proper podcast-style notification with seek.
+- One engine to play any future offline file; the current per-WAV
+  `MediaPlayer` "dance" in SpeechController could eventually be retired.
+
+Costs / risks
+-------------
+- APK size (~2–4 MB), against our "keep it minimal" goal.
+- A second playback path to maintain (live TTS vs. pre-rendered file), plus
+  learning a new, fairly large API.
+- Migration friction: our `WcastMediaService` currently hand-rolls a framework
+  `MediaSession`; the clean Media3 way replaces some of that with
+  `MediaSessionService`.
+
+What this means for existing functionality (the part you asked about)
+---------------------------------------------------------------------
+Nothing about today's behavior changes. Pre-render is an *additive* feature:
+
+- Live TTS playback (`SpeechController`: synthesizeToFile -> WAV -> framework
+  `MediaPlayer`, with the ticket-02 look-ahead) stays exactly as it is. You can
+  still open any article and press play with no pre-render involved.
+- Pre-rendered playback is a *separate, opt-in* path that only activates when a
+  bookmarked article has a finished `.m4a`. Tapping the article then plays the
+  baked file instead of re-synthesizing. If no `.m4a` exists, you get today's
+  live path — no change.
+- So "current functionality seems fine" is preserved; pre-render is purely a
+  nicer, offline, no-gap alternative for articles you explicitly rendered.
+
+Recommendation (the either/or you asked me to weigh)
+----------------------------------------------------
+Ship pre-render in two layers, and do NOT take on ExoPlayer yet:
+
+1. Build the pipeline + single `.m4a` + cue table now, and play it with the
+   *framework* `MediaPlayer` we already use (poll `getCurrentPosition()` ~every
+   250 ms, map it to the cue table, and feed the same "active paragraph" signal
+   the left margin/scroll already consume). Zero new dependencies.
+2. Keep ExoPlayer/Media3 as its own, separately-scoped ticket (the "Media3
+   step" ticket 09 already queued). If you later want true skip-by-paragraph and
+   a podcast-style seek bar on pre-rendered files, adopt it *just* for that
+   path.
+
+This honors "minimal dependencies / small-ish APK," gives you the offline
+feature now, and defers the only dependency question worth agonizing over.
+
+Why the cue table still works with framework MediaPlayer (and the one risk)
+---------------------------------------------------------------------------
+We control the timestamps when we encode+mux, so the cue table is computed from
+cumulative PCM sample counts per paragraph — not guessed from wall time. The one
+thing to validate on-device: framework `MediaPlayer`'s reported position on
+AAC/M4A can carry a small constant offset at the very start (encoder priming).
+If it shows up, we add one measured correction constant to the cue lookup. This
+is exactly the kind of drift ExoPlayer handles for us automatically — which is
+why it stays on the table as the "polish" step.
+
+Concrete plan (grounded in the current code)
+--------------------------------------------
+Pipeline (reuses the existing normalize -> synthesizeToFile path):
+1. Reuse the same "build the utterance list" logic SpeechController already
+   uses: title, then each section's heading + paragraphs. Normalize each with
+   the existing `Normalizer` so pre-rendered speech == live speech.
+2. For each utterance: `TextToSpeech.synthesizeToFile` -> WAV (respect
+   `engine.maxSpeechInputLength`; split any over-long paragraph and still map
+   every split back to the same paragraph index, using the first split's start
+   as the paragraph cue).
+3. Read each WAV's PCM directly (it is a trivial RIFF/PCM container — no codec
+   needed to *decode*), feed it to the platform AAC encoder
+   (`OMX.google.aac.encoder` via `MediaCodec`), and mux with `MediaMuxer` into
+   one `article.m4a`, assigning each frame a presentation timestamp derived from
+   the cumulative PCM sample count.
+4. Write `cue.json` alongside it: `[{sectionId, paragraphIndex, startMs}, ...]`.
+5. Storage: `filesDir/prerender/<titleHash>/article.m4a` + `cue.json`
+   (app-private; no permission). Delete with the existing "remove bookmark"
+   flow.
+6. Export: a "save to file system" action that opens
+   `ACTION_CREATE_DOCUMENT` (MIME `audio/mp4`) and streams the `.m4a` out. The
+   Storage Access Framework grants a one-off URI lease, so this needs **no
+   runtime permission** — no `WRITE_EXTERNAL_STORAGE`, no
+   `MANAGE_EXTERNAL_STORAGE`. (Your "another permission" concern turns out to be
+   avoidable entirely.)
+
+Playback (pre-rendered path):
+- A small "render-aware player" that, given a bookmarked title with a `.m4a`,
+  plays it via `MediaPlayer` and ticks position -> cue table -> active
+  (sectionId, paragraphIndex), driving the same left-margin/scroll callback the
+  live path uses.
+- Skip/pause/resume operate on the single file (seek) rather than re-render.
+
+Rendering must be a foreground service + block the UI:
+- Add a `PreRenderService` (foreground, `FOREGROUND_SERVICE_TYPE_DATA_SYNC`)
+  with a progress notification ("Rendering 'Article' — paragraph 12 of 240").
+  Long articles can take minutes on a slow engine, so it must survive leaving
+  the screen. This mirrors the existing `WcastMediaService` pattern (plain
+  `Service` + foreground type, since `MediaSessionService` is unavailable in
+  this SDK).
+- Share render state the way `SpeechControllerBridge` already shares playback
+  state: a singleton `StateFlow` with (title, running, done/total). Both the
+  Bookmarks screen and the main reading screen observe it.
+- While a render is in flight, disable Play/Stop on the reading screen and the
+  render icons in Bookmarks. Rationale: TTS engines serialize synthesis through
+  one engine service, so concurrent `synthesizeToFile` calls would collide.
+  One render at a time, period.
+
+UI plan (the bookmarks screen, per your sketch)
+-----------------------------------------------
+- Each bookmark row already has the title (tap to open) and a Refresh icon.
+  Add a second, three-state icon on the right:
+
+  1. Not rendered  -> "render / make available offline" icon. Tap starts the
+     render.
+  2. Rendering     -> inline `CircularProgressIndicator` (spinner) with the
+     row disabled; no tap while running.
+  3. Rendered      -> a trash-can icon; tap deletes the `.m4a` (+ cue), back to
+     state 1. (Removing the *bookmark* already deletes it too, per ticket 11.)
+
+- Icon candidates for "render / offline" (all already in
+  `material-icons-extended`, which we ship):
+  * `Icons.Filled.DownloadForOffline` — clearest "make available offline"
+    meaning; my top pick.
+  * `Icons.Filled.Memory` — reads as "compute/render" (a chip), if you want
+    that connotation.
+  * `Icons.Filled.Autorenew` — reads as "generate/process."
+  * Trash can: `Icons.Filled.Delete`.
+  My recommendation: `DownloadForOffline` -> spinner -> `Delete`.
+
+- "You're hearing the pre-render" notification: when the user opens a
+  bookmarked article that has a finished `.m4a` and plays it, show a small
+  banner/snackbar ("Playing pre-rendered audio") once, and/or a persistent badge
+  on the article header. The play affordance behaves identically; only the
+  source differs.
+
+Remaining open questions (small — confirm before I build)
+---------------------------------------------------------
+1. Icon pick for "render": `DownloadForOffline` (my pick), `Memory`, or
+   `Autorenew`?
+2. OK to add a `PreRenderService` foreground service of type `dataSync` (and the
+   corresponding `FOREGROUND_SERVICE_DATA_SYNC` permission on Android 14+) for
+   the render job?
+3. Export file name convention: `<Article title>.m4a` (sanitized) in the
+   user-chosen folder — fine?
+4. Should "save to file system" be a separate icon next to the trash can, or
+   part of the bookmark row's overflow? (I lean: a long-press or a second small
+   icon so the row stays uncluttered.)
+
+Once you pick 1–4 I'll implement: pipeline + cue table + render service + the
+bookmarks-row states + the pre-rendered playback path + export, all on the
+existing `MediaPlayer` (no new dependency), and leave ExoPlayer as a separate
+follow-up ticket.
+==reply==
+In the next pass, I'm going to look at exoplayer first separately, so for right now, this is on pause. I will think about that in ticket 22. one other thing I want to throw in the context here, though, is that when we do do pre-render, I want to start every file with the sentence: "This is the Wikipedia article, [name of article], read aloud by a text-to-speech voice." and then end with ""This concludes the Wikipedia article on [Name of article]. This recording and the underlying text are licensed under the Creative Commons Attribution ShareAlike 4.0 License; additional terms may apply." This is really only important for save (If we're giving the user the ability to take files and put them other places, I want that disclaimer that is TTS and the CC license to be baked in to the audio file as we give it to them), but I'm indifferent to whether that is also played in the app. 
+
