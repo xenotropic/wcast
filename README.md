@@ -12,8 +12,8 @@
     </td>
   </tr>
 </table>
+For now if you want to try it out please see the <a href="https://github.com/xenotropic/wcast/releases">releases tab</a> and sideload the latest release's apk. I have submitted to F-Droid and likely will submit to Play soon. 
 
----
 
 ## What it does
 
