@@ -22,6 +22,7 @@ local.properties
 .DS_Store
 Thumbs.db
 .clinerules
+.todo
 # ─── Signing keys & secrets ────────────────────────────────────────────────────
 *.jks
 *.keystore
