@@ -30,6 +30,27 @@ this project is versioned, built, and committed.
 5. Do not commit build artifacts, local config, or anything already listed in
    `.gitignore`.
 
+## Building & validating changes locally (IMPORTANT)
+
+- **Always produce a fresh debug APK after code changes.** Compiling
+  (`./gradlew compileDebugKotlin`) or running the unit tests does NOT build or
+  refresh the APK, so `app/build/outputs/apk/debug/app-debug.apk` can remain
+  stale. Whenever a task changes code, run:
+
+  ```bash
+  ./gradlew assembleDebug
+  ```
+
+  and confirm the APK was actually regenerated (its mtime/size changed) before
+  handing it off — otherwise the user installs an out-of-date build and reports
+  that "nothing changed".
+- **Refresh the About-screen build time.** `BuildConfig.BUILD_TIME_PT` is
+  generated at *build* time (in `America/Los_Angeles` time), so every rebuild
+  must yield a newer timestamp. After `assembleDebug`, check the generated
+  `app/build/generated/source/buildConfig/debug/cloud/morris/wcast/BuildConfig.java`
+  for a fresh `BUILD_TIME_PT` (and, when relevant, that `versionName` matches the
+  intended tag) so the in-app About screen never shows a stale time.
+
 ## Versioning
 
 - Pre-Google-Play releases use semantic versions starting at `0.1`
