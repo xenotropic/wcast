@@ -313,3 +313,14 @@ a cloud engine.
 Not done here (per your reply): ticket 21 stays paused/out of scope, and the
 "merge adjacent short" (headings/list-item consolidation) is a separate follow-up
 to land and test separately.
+==reply==
+This certainly seems better and not worse. There are still some gaps with PocketTTS (my "slow" tester), but without doing a lot of diagnostics that I don't have the time for today, it seems possibly as good as it can get. Let's close this out for now, and if I feel like putting attention on it, I'll reopen later. 
+
+==Status Report: 2026-10-12 12:14 PDT==
+CLOSED per reply — the deeper multi-chunk look-ahead is "certainly better and
+not worse" on Pocket TTS. Remaining gaps on the slow local engine are likely
+engine-bound (per-paragraph model warm-up) and accepted for now; no further
+changes planned. Reopen if it warrants more attention later. Ticket 21 (full
+background pre-render) and the "merge adjacent short" consolidation remain
+possible follow-ups if reopened.
+
