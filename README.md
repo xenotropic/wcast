@@ -17,112 +17,97 @@
 
 ## What it does
 
-- **Search Wikipedia** straight from the app. Type a topic and Wcast finds the
-  article, or shows you close matches to tap.
-- **A clean reading view.** Wcast strips out infoboxes, citation
-  markers, tables, nav links, and edit controls in its view. 
-- **Listen to any article.** Tap **Play** next to the title to hear the whole
-  article from start to finish, or tap **Play** next to a section to hear just
-  that part.
-- **Natural-sounding speech.** Before anything is spoken, Wcast further rewrites the
-  text to help TTS engines read it aloud — turning "Henry VIII" into "Henry the
-  eighth", "120 km/h" into "120 kilometers per hour", "$4 billion" into "four
-  billion dollars", and so on. While there are other text normalization engines (NemoTTS, others built into various TTS models), this is just a very simple set of rules tuned to Wikipedia, things like scientific units and Roman numerals that can be done quickly by phone hardware on the fly. 
+- **Search** — type a topic and it fetches the matching Wikipedia article, with
+  suggestions when there are several close matches.
+- **A cleaner reading view** — infoboxes, citation markers, tables, nav boxes, and
+  edit links are stripped out so you mostly get prose.
+- **Playback** — read a whole article, or tap a section to read just that part. A
+  marker on the left tracks which paragraph is being spoken, and the view scrolls
+  to follow it.
+- **Text normalization** — before anything is read aloud, the article is rewritten
+  so a text-to-speech engine is more likely to say it correctly ("Henry VIII" →
+  "Henry the eighth", "120 km/h" → "120 kilometers per hour", "$4 billion" →
+  "four billion dollars", plus Wikipedia-specific cases like units, roman
+  numerals, and ordinals). This is a small set of hand-written rules tuned to
+  Wikipedia prose, not a general NLP pipeline, so it catches a lot of common
+  cases but far from everything.
+- **Bookmarks** — save your place in an article and resume it later.
+- **Background playback** — while it reads, a media notification shows pause/skip
+  controls, and wired/Bluetooth headset buttons work, like a podcast or music app.
+- **A few settings** — choose whether playback stops at the end of a section or
+  continues to the end of the article, resize the playback bar, and jump into
+  Android's text-to-speech settings to change the voice.
 
----
+Wcast is an independent project; it isn't affiliated with or endorsed by
+Wikipedia or the Wikimedia Foundation.
 
-## How the text-to-speech works
+## What it does not do
 
-Wcast does **not** include its own voice engine. It uses the
-**[Android system text-to-speech](https://developer.android.com/reference/android/speech/tts/TextToSpeech)
-engine** that is already installed and configured on your device.
+- **No built-in voices.** It speaks with whatever Android text-to-speech engine is
+  installed and selected on the device, so quality and speed depend entirely on
+  that engine — a slow local engine will read slowly.
+- **English-only, rule-based normalization.** It mispronounces plenty of things
+  and is only tuned for Wikipedia-style prose.
+- **Pre-release.** The app is at version 0.x and isn't published on an app store
+  yet; for now you build it from this repo (see below).
+- **Paragraph pauses.** Rendering and playback happen a paragraph at a time, so a
+  slow text-to-speech engine can leave a gap between paragraphs. This is actively
+  being worked on.
 
-This means:
+## How text-to-speech works
 
-- **The voice comes from your phone.** Whatever TTS engine you have selected in
-  Android's **Settings → System → Languages & input → Text-to-speech output**
-  (usually "Google Speech Services") is what Wcast speaks with. Switch the
-  engine or voice there, and Wcast's voice changes with it.
-- **Only two permissions, both minimal.** Wcast requests `INTERNET` to fetch
-  articles from Wikipedia — it talks to the TTS service you already have, so
-  there's no audio permission to grant. On Android 13+ it also asks for
-  `POST_NOTIFICATIONS` once, so the media controls can appear while it reads
-  (see [Permissions](#permissions) below).
+It uses the Android system text-to-speech engine — the one set under
+**Settings → System → Languages & input → Text-to-speech output** (usually
+"Google Speech Services"). Wcast doesn't ship any voices. It renders each
+paragraph to a short audio file with that engine, then plays the file back
+itself; that's how it can pause, resume, and skip at paragraph boundaries and
+keep playing in the background. Change the engine or voice in system settings
+and Wcast follows suit (including third-party engines such as Marmalade-TTS).
 
-### Tuning the pronunciation
-
-Most of the normalization rules (some are too complex and have to exist as procedural code) live in plain, editable text files bundled with the app
+Pronunciation can be tuned without touching code: the simpler find-and-replace
+rules live in editable files bundled with the app
 (`app/src/main/assets/normalization/`):
 
 | File | Purpose |
 |------|---------|
 | `bulk_replace.csv` | One-to-one substitutions (e.g. `Mr.` → `Mister`). |
-| `pronounced_acronyms.csv` | How specific acronyms should be said (e.g. `NATO` → `Nayto`). |
+| `pronounced_acronyms.csv` | How specific acronyms are said (e.g. `NATO` → `Nayto`). |
 | `regex_rules.txt` | Ordered regex rules for things like number ranges and temperature. |
 
-The simpler transforms (find → replace) are all data-driven, so tweaking how a
-word or phrase is spoken can be done by editing these files without touching
-code. More involved transforms (money, fractions, ordinals, roman numerals)
-live in the Kotlin normalization code.
-
----
-
-## Features at a glance
-
-- 🔎 Wikipedia search with exact-match + suggestions
-- 🧹 Cleaned article body (no infoboxes, references, etc.)
-- ▶️ Whole-article and per-section playback
-- 🗣️ Uses your device's built-in Android TTS engine
-- ✍️ Simple text normalization for more straightforward pronunciation
-
----
-
-## Building
-
-Wcast is a standard Android Gradle project.
-
-**Prerequisites:** Android Studio (or the Android SDK), JDK 17.
-
-```bash
-# Build a debug APK
-./gradlew assembleDebug
-
-# Run the unit tests (normalization logic)
-./gradlew test
-```
-
-The debug APK is written to `app/build/outputs/apk/debug/`.
-
-> You can also open the project in Android Studio and press **Run**.
-
----
-
-## Tech stack
-
-- **Language:** Kotlin
-- **UI:** Jetpack Compose (Material 3)
-- **Architecture:** MVVM + unidirectional data flow with `StateFlow`
-- **HTML parsing:** jsoup
-- **Concurrency:** Kotlin coroutines
-- **Speech:** Android system `TextToSpeech`
-
----
+More involved cases (money, fractions, ordinals, roman numerals) live in the
+Kotlin normalization code.
 
 ## Permissions
 
-Wcast requests only these two permissions:
+- **`INTERNET`** — fetch articles and page metadata from Wikipedia.
+- **`POST_NOTIFICATIONS`** — on Android 13 and newer, to show the media
+  notification while an article is reading. Older Android versions don't need to
+  prompt for notifications. If it's declined, playback and headset controls still
+  work, you just don't get the card.
+- It also declares the usual foreground-service permission so playback can keep
+  running with the screen off or another app in front.
 
-- **`android.permission.INTERNET`** — to fetch Wikipedia articles.
-- **`android.permission.POST_NOTIFICATIONS`** — needed on Android 13 and newer
-  to show the media-playback card (the notification with pause/skip controls)
-  while an article is being read. Notifications require this permission starting
-  in Android 13; on Android 12 and below no permission is needed and none is
-  asked for. It is requested once, and playback/media-button control still works
-  if it is declined — only the on-screen card is hidden.
+No microphone, camera, location, or storage permissions are requested, and no
+audio is recorded.
 
-No microphone, storage, location, or audio-record permissions are ever requested.
+## Building
 
----
+A normal Android Gradle project. Prerequisites: Android Studio (or the Android
+SDK) and JDK 17. Minimum Android version is 8.0 (API 26).
+
+```bash
+./gradlew assembleDebug   # debug APK lands in app/build/outputs/apk/debug/
+./gradlew test            # JVM unit tests for the normalization logic
+```
+
+Or open the project in Android Studio and press Run.
+
+## Tech stack
+
+Kotlin and Jetpack Compose (Material 3); MVVM with `StateFlow` for UI state;
+jsoup for HTML parsing; coroutines for concurrency. Speech goes through the
+Android `TextToSpeech` API and standard `MediaPlayer`/`MediaSession`, so there's
+no bundled voice engine and no audio codec dependencies.
 
 ## License
 
