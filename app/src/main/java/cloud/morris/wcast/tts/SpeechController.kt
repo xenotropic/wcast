@@ -7,7 +7,9 @@ import android.os.Bundle
 import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.os.SystemClock
 import android.util.Log
+import cloud.morris.wcast.DebugLog
 import cloud.morris.wcast.data.ArticleSection
 import cloud.morris.wcast.normalization.Normalizer
 import cloud.morris.wcast.normalization.loadNormalizationRules
@@ -133,6 +135,20 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
      */
     private val readyIndices = ArrayDeque<Int>()
 
+    /**
+     * Monotonic timestamp (`elapsedRealtime`) of when the current in-flight
+     * synthesis began, used to measure per-chunk render latency. Synthesis is
+     * serialized, so a single slot is enough.
+     */
+    private var synthStartedAtMs: Long = 0L
+
+    /**
+     * Monotonic timestamp of when the previous chunk's audio ended (or, before
+     * the first chunk, the stream start). [playFile] diffs against it to report
+     * the inter-utterance "gap" — the very delay ticket 02 is about.
+     */
+    private var lastUtteranceEndedAtMs: Long = SystemClock.elapsedRealtime()
+
     /** Directory holding the rendered WAV files for the current stream. */
     private val synthDir: File = File(appContext.cacheDir, "synth")
 
@@ -231,6 +247,8 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         queue = utterances
         currentIndex = 0
         Log.d(TAG, "startQueue utterances=${utterances.size}")
+        lastUtteranceEndedAtMs = SystemClock.elapsedRealtime()
+        DebugLog.d(TAG, "stream start utterances=${utterances.size}")
         if (utterances.isEmpty()) {
             onStreamDone?.invoke()
             return
@@ -268,8 +286,11 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         synthInFlight = true
         synthIndex = index
         Log.d(TAG, "beginSynthesis index=$index/${queue.size} textLen=${utterance.text.length} file=${file.name}")
+        synthStartedAtMs = SystemClock.elapsedRealtime()
+        DebugLog.d(TAG, "synth start index=$index/${queue.size} textLen=${utterance.text.length}")
         val result = engine.synthesizeToFile(utterance.text, params, file, utteranceId)
         Log.d(TAG, "synthesizeToFile index=$index result=$result exists=${file.exists()} size=${file.length()}")
+        DebugLog.d(TAG, "synthesizeToFile index=$index result=$result renderMs=${SystemClock.elapsedRealtime() - synthStartedAtMs} bytes=${file.length()}")
         if (result != TextToSpeech.SUCCESS) {
             // Rejected synchronously; an async onError may or may not also fire,
             // but onSynthError guards against a double-advance via synthInFlight.
@@ -285,6 +306,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         synthInFlight = false
         synthIndex = null
         Log.d(TAG, "onSynthDone gen=$gen index=$index")
+        DebugLog.d(TAG, "synth done index=$index renderMs=${SystemClock.elapsedRealtime() - synthStartedAtMs} buffered=${player != null} readyIndices=${readyIndices.size}")
         if (player == null) {
             // Nothing is audible yet, so this rendered chunk becomes the play head.
             playFile(gen, index)
@@ -303,6 +325,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         synthInFlight = false
         synthIndex = null
         Log.w(TAG, "onSynthError gen=$gen index=$index")
+        DebugLog.d(TAG, "synth error index=$index renderMs=${SystemClock.elapsedRealtime() - synthStartedAtMs}")
         if (player == null) {
             // The chunk we were about to play failed to render; skip past it.
             advanceAfterUtterance(gen, index)
@@ -348,6 +371,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
             paused = false
             mp.start()
             Log.d(TAG, "playFile started index=$index duration=${mp.duration}ms")
+            DebugLog.d(TAG, "play start index=$index gapMs=${SystemClock.elapsedRealtime() - lastUtteranceEndedAtMs} durationMs=${mp.duration} bytes=${file.length()}")
             onUtteranceStarted?.invoke(index, queue[index])
         } catch (e: Exception) {
             // Missing/corrupt WAV or a prepare/start failure. Release and treat the
@@ -384,6 +408,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         val highest = maxOf(currentIndex, readyIndices.lastOrNull() ?: -1)
         val frontier = highest + 1
         if (frontier > horizon) return
+        DebugLog.d(TAG, "topUpLookAhead begin frontier=$frontier horizon=$horizon buffer=${readyIndices.size}")
         beginSynthesis(frontier)
     }
 
@@ -395,6 +420,8 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
     private fun advanceAfterUtterance(gen: Int, index: Int) {
         if (gen != generation) return
         releasePlayer()
+        lastUtteranceEndedAtMs = SystemClock.elapsedRealtime()
+        DebugLog.d(TAG, "utterance ended index=$index readyIndices=${readyIndices.size} synthInFlight=$synthInFlight synthIndex=$synthIndex")
         currentIndex = maxOf(currentIndex, index + 1)
         if (currentIndex >= queue.size) {
             Log.d(TAG, "stream finished after index=$index (${queue.size} utterances)")
@@ -499,6 +526,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         if (queue.isEmpty() || paused) return
         paused = true
         Log.d(TAG, "pause (player=${player != null} synthInFlight=$synthInFlight) at index=$currentIndex")
+        DebugLog.d(TAG, "pause player=${player != null} synthInFlight=$synthInFlight index=$currentIndex")
         if (player != null) {
             try { player?.pause() } catch (_: Exception) { /* resume will re-render */ }
         } else if (synthInFlight) {
@@ -510,6 +538,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
     fun resume() {
         if (queue.isEmpty()) return
         Log.d(TAG, "resume (paused=$paused) at index=$currentIndex")
+        DebugLog.d(TAG, "resume paused=$paused index=$currentIndex")
         if (!paused) {
             player?.let { if (!it.isPlaying) it.start() }
             return

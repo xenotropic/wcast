@@ -43,10 +43,20 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_EULA_ACCEPTED, false)
         set(value) = prefs.edit().putBoolean(KEY_EULA_ACCEPTED, value).apply()
 
+    /**
+     * Whether the in-app debug logger ([DebugLog]) should capture lines. Toggled
+     * from Settings → Debug; read back on activity creation so the flag survives
+     * process restarts. See AGENTS.md "Debug logging" for how to add statements.
+     */
+    var debugLogsEnabled: Boolean
+        get() = prefs.getBoolean(KEY_DEBUG_LOGS_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_DEBUG_LOGS_ENABLED, value).apply()
+
     private companion object {
         const val PREFS_NAME = "wcast_settings"
         const val KEY_CONTINUITY = "continuity"
         const val KEY_PLAYER_BAR_SCALE = "player_bar_scale"
         const val KEY_EULA_ACCEPTED = "eula_accepted"
+        const val KEY_DEBUG_LOGS_ENABLED = "debug_logs_enabled"
     }
 }

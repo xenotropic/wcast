@@ -1,0 +1,21 @@
+I'd like to make it easier to debug from within the app without having to use ADB for everything, especially adding in custom debugs. Please add a Debug submenu into settings. It then contains 
+-  checkbox to turn on debug logs; 
+ - a button to show debug logs that brings up a view of the logs; that view of the logs has an icon at the top select all and paste (intent to be able to easily paste them to files to put back into context here)
+ - for right now focus on debug logs around generation and playback timing, relating to issue 02
+ - add an instruction to Agents.md with directions to add debug statements keyed to these settings; make sure all debug statements will be easily grep-able (some common key-phrase) if we want to remove them later
+## Status — 2026-10-14 (implemented, local commit)
+
+Done. In-app debug logging with no ADB:
+
+- `DebugLog.kt` (new): thread-safe, in-memory ring buffer (1000 lines), Android-free (JVM-testable). API: `DebugLog.d(tag, msg)`, `state` (StateFlow<List<String>>), `snapshot()`, `clear()`, `enabled`, `KEY_PHRASE = "WCAST_DEBUG"`.
+- `SettingsStore.kt`: added `debugLogsEnabled` pref (`debug_logs_enabled`).
+- `SettingsActivity.kt`: new **Debug** section → "Debug logs" toggle + "View debug logs" nav row (chevron). Flag initialized & wired to `DebugLog.enabled`.
+- `DebugLogActivity.kt` (new) + manifest: read-only viewer with Select-all / Copy / Clear top-bar icons + long-press selection; live-updates via `collectAsState`.
+- `MainActivity.kt` / `SettingsActivity.kt`: `DebugLog.enabled` seeded from prefs on create.
+- `SpeechController.kt`: keyed timing around generation & playback (issue 02) — stream start, synth start/result (renderMs), synth done/error, play start (gapMs vs previous chunk end = the inter-paragraph delay), utterance ended, look-ahead frontier, pause/resume. Existing `Log.d("WcastTTS", …)` left intact.
+- `AGENTS.md`: "Debug logging (in-app, no ADB)" section — route all new debug output through `DebugLog.d`, key-phrase `WCAST_DEBUG` so call sites are grep-strippable.
+- `DebugLogTest.kt` (new): 4 tests (disabled no-op, formatted line, bounded buffer drops oldest, clear) — all pass.
+
+Not done (per ticket scope): no disk persistence; logs reset on process death. Clicking the body text relies on Android's selection handles (no programmatic select-all), so the Select-all icon copies the full buffer to the clipboard.
+
+Validation: `./gradlew compileDebugKotlin testDebugUnitTest assembleDebug` → BUILD SUCCESSFUL; `app-debug.apk` regenerated (2026-10-14 03:54 UTC); `BUILD_TIME_PT` fresh.

@@ -55,6 +55,27 @@ this project is versioned, built, and committed.
   for a fresh `BUILD_TIME_PT` (and, when relevant, that `versionName` matches the
   intended tag) so the in-app About screen never shows a stale time.
 
+## Debug logging (in-app, no ADB)
+
+Wcast has an in-app debug logger so a user can capture diagnostics on-device
+without `adb logcat`. The toggle is **Settings → Debug → "Debug logs"**; the
+captured lines are shown under **Settings → Debug → "View debug logs"**, whose
+top bar offers select-all / copy so the text can be pasted back into a ticket.
+Logs are kept **in memory only** (a ~1000-line ring buffer in
+`cloud.morris.wcast.DebugLog`), so they reset whenever the process dies.
+
+When adding debug statements, follow these rules:
+
+- Log through `cloud.morris.wcast.DebugLog.d(tag, message)` — **never**
+  `android.util.Log` for new debug output. `d()` is a no-op unless the setting
+  is enabled, so statements are effectively free when debugging is off.
+- Every emitted line is prefixed with the key-phrase `WCAST_DEBUG`
+  (`DebugLog.KEY_PHRASE`).
+- **Grep-ability:** every debug call site is findable by grepping the source for
+  `DebugLog.d` (or the constant `DebugLog.KEY_PHRASE` / the literal
+  `WCAST_DEBUG`). Because they all route through this one symbol rather than the
+  generic `Log.d`, stripping them later is a mechanical find/replace.
+
 ## Versioning
 
 - Pre-Google-Play releases use semantic versions starting at `0.1`

@@ -23,6 +23,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SettingsVoice
@@ -65,6 +66,7 @@ class SettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val settings = SettingsStore(this)
+        DebugLog.enabled = settings.debugLogsEnabled
         setContent {
             WcastTheme {
                 Surface(
@@ -79,9 +81,15 @@ class SettingsActivity : ComponentActivity() {
                         onContinuityChange = { settings.continuity = it },
                         initialPlayerBarScale = settings.playerBarScale,
                         onPlayerBarScaleChange = { settings.playerBarScale = it },
+                        initialDebugLogsEnabled = settings.debugLogsEnabled,
+                        onDebugLogsEnabledChange = { enabled ->
+                            settings.debugLogsEnabled = enabled
+                            DebugLog.enabled = enabled
+                        },
                         onBack = { finish() },
                         onOpenTtsSettings = ::openTtsSettings,
-                        onReloadVoice = ::reloadVoice
+                        onReloadVoice = ::reloadVoice,
+                        onViewDebugLogs = ::openDebugLogs
                     )
                 }
             }
@@ -125,6 +133,11 @@ class SettingsActivity : ComponentActivity() {
         }
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     }
+
+    /** Opens the in-app debug log viewer ([DebugLogActivity]). */
+    private fun openDebugLogs() {
+        startActivity(Intent(this, DebugLogActivity::class.java))
+    }
 }
 
 @Composable
@@ -136,12 +149,16 @@ private fun SettingsScreen(
     onContinuityChange: (Boolean) -> Unit,
     initialPlayerBarScale: Int,
     onPlayerBarScaleChange: (Int) -> Unit,
+    initialDebugLogsEnabled: Boolean,
+    onDebugLogsEnabledChange: (Boolean) -> Unit,
     onBack: () -> Unit,
     onOpenTtsSettings: () -> Unit,
-    onReloadVoice: () -> Unit
+    onReloadVoice: () -> Unit,
+    onViewDebugLogs: () -> Unit
 ) {
     var continuity by remember { mutableStateOf(initialContinuity) }
     var playerBarScale by remember { mutableStateOf(initialPlayerBarScale) }
+    var debugLogsEnabled by remember { mutableStateOf(initialDebugLogsEnabled) }
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
@@ -216,6 +233,31 @@ private fun SettingsScreen(
                     playerBarScale = newValue
                     onPlayerBarScaleChange(newValue)
                 }
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+            SettingsSection(title = "Debug")
+            SettingsToggleRow(
+                title = "Debug logs",
+                subtitle = "Record generation and playback timing from the text-to-speech engine (kept in memory).",
+                checked = debugLogsEnabled,
+                onCheckedChange = { newValue ->
+                    debugLogsEnabled = newValue
+                    onDebugLogsEnabledChange(newValue)
+                }
+            )
+            SettingsRow(
+                icon = {
+                    Icon(
+                        imageVector = Icons.Filled.BugReport,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                },
+                title = "View debug logs",
+                subtitle = "Select and copy the captured lines to paste into a ticket",
+                onClick = onViewDebugLogs
             )
 
             Spacer(modifier = Modifier.height(24.dp))

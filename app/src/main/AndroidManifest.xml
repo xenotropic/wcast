@@ -45,6 +45,11 @@
             android:exported="false"
             android:label="@string/app_name" />
 
+        <activity
+            android:name=".DebugLogActivity"
+            android:exported="false"
+            android:label="@string/app_name" />
+
         <!-- Foreground playback service: owns the framework MediaSession so wired/
              Bluetooth headset buttons (and lock-screen/drawer controls) reach this
              app even when the UI isn't foregrounded, matching how Spotify and

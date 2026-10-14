@@ -45,6 +45,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         settings = SettingsStore(this)
+        DebugLog.enabled = settings.debugLogsEnabled
         pendingOpenTitle.value = intent.getStringExtra(BookmarksActivity.EXTRA_OPEN_BOOKMARK)
         requestNotificationPermissionIfNeeded()
         setContent {
