@@ -22,7 +22,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,10 +44,10 @@ import cloud.morris.wcast.ui.theme.WcastTheme
  * A read-only view of the in-app [DebugLog] buffer, reached from Settings →
  * Debug → "View debug logs".
  *
- * The top bar offers "Select all" and "Copy" (both put the *entire* log on the
- * clipboard so it can be pasted into a ticket/file) plus "Clear" to empty the
- * buffer. The text itself is inside a [SelectionContainer], so individual lines
- * can also be selected and copied by long-press.
+ * The top bar offers "Copy" (puts the *entire* log on the clipboard so it can
+ * be pasted into a ticket/file) plus "Clear" to empty the buffer. The text
+ * itself is inside a [SelectionContainer], so individual lines can also be
+ * selected and copied by long-press.
  */
 class DebugLogActivity : ComponentActivity() {
 
@@ -103,13 +102,6 @@ private fun DebugLogScreen(onBack: () -> Unit) {
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f)
             )
-            IconButton(onClick = copyAll) {
-                Icon(
-                    imageVector = Icons.Filled.SelectAll,
-                    contentDescription = "Select all",
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
             IconButton(onClick = copyAll) {
                 Icon(
                     imageVector = Icons.Filled.ContentCopy,

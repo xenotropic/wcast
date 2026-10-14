@@ -162,3 +162,40 @@ Open questions (decisions before I implement)
 3. Scope — is this ticket meant to *evaluate* only (done here), or should I go
    ahead and implement the Level-1 session swap as the next step?
 
+==reply==
+1 - agree staged A then B
+2 - this is fine. i actually don't see one today (you seem to think there should be one?), just one play/pause and smaller forward/back. but anyway so long as play/pause is there (at a minimum) then sounds fine. happy to go with whatever controls make sense now. no seek bar yet certainly. I think there have been some changes since you last looked at this, so just take a look around and review the plan again and make sure it sounds good before I say go. Most likely you're like "yup about the same, ready to go" but want to check.  
+==Status Report: 2026-10-13 21:13 PDT==
+Re-reviewed against current code. Plan still holds — yes, "about the same, ready
+to go"; awaiting your explicit "go" to implement Level A.
+
+Unchanged since the last report (matches it):
+- `WcastMediaService.kt` still runs a hand-rolled framework `MediaSession` + a
+  foreground `Service` (not the Media3 `MediaSessionService` — that class isn't in
+  this SDK, which is exactly why we'd add `androidx.media3.session.MediaSessionService`).
+  The notification advertises 4 transport actions (previous / play-pause / next /
+  stop) through `MediaControlReceiver`, and the published `PlaybackState` uses
+  `PLAYBACK_POSITION_UNKNOWN` → no duration, no seek bar today.
+- Small clarification on point 2: the *system* notification today does carry an
+  explicit "Stop" action; the lock-screen/compact view usually collapses it, and
+  the in-app drawer bar is the simple play/pause + back/forward you described.
+  Doesn't change the decision — media3's default drops Stop and keeps play/pause
+  + skip, which matches your "play/pause at minimum, no seek bar yet".
+
+Changed since the last look (ticket 02 landed after the prior report):
+- `SpeechController.kt` now has the deeper multi-chunk look-ahead (ticket 02): a
+  `readyIndices` pre-render buffer, `topUpLookAhead` frontier/horizon, on top of
+  the existing `generation` / `currentIndex` / `synthInFlight` stale-callback
+  guards. This is the largest surface the engine swap (Level B) touches, and the
+  stall-avoiding gap behavior must carry over verbatim.
+- In-app debug logging (ticket 24) added keyed render/gap timing — orthogonal,
+  but it labels the exact inter-paragraph "gap" metric we want preserved across
+  a player rewrite.
+
+Your three answers, restated as the implementation contract:
+1. Sequenced: Level A (media3-session only) first, keep the per-chunk framework
+   `MediaPlayer` + look-ahead; Level B (ExoPlayer continuous timeline) only after
+   ticket 21 pre-render lands.
+2. Notification: media3 default controls (play/pause + skip, no Stop, no seek bar
+   while duration is unknown). Play/pause guaranteed.
+3. Scope: evaluation complete; implement Level A next on your go.

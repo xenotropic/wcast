@@ -1,3 +1,5 @@
+==CLOSED==
+==Original Issue==
 I'd like to make it easier to debug from within the app without having to use ADB for everything, especially adding in custom debugs. Please add a Debug submenu into settings. It then contains 
 -  checkbox to turn on debug logs; 
  - a button to show debug logs that brings up a view of the logs; that view of the logs has an icon at the top select all and paste (intent to be able to easily paste them to files to put back into context here)
@@ -19,3 +21,9 @@ Done. In-app debug logging with no ADB:
 Not done (per ticket scope): no disk persistence; logs reset on process death. Clicking the body text relies on Android's selection handles (no programmatic select-all), so the Select-all icon copies the full buffer to the clipboard.
 
 Validation: `./gradlew compileDebugKotlin testDebugUnitTest assembleDebug` → BUILD SUCCESSFUL; `app-debug.apk` regenerated (2026-10-14 03:54 UTC); `BUILD_TIME_PT` fresh.
+
+==Status Report: 2026-10-13 21:13 PDT==
+CLOSED — implemented and verified (status above). Follow-up from user: removed
+the redundant "Select all" top-bar icon from the log viewer; kept "Copy" (which
+already copies the whole buffer to the clipboard) and "Clear". Rebuilt and unit
+tests pass.
