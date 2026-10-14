@@ -9,6 +9,7 @@ import android.media.AudioManager
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import cloud.morris.wcast.DebugLog
 import cloud.morris.wcast.MainActivity
 import cloud.morris.wcast.R
 
@@ -28,6 +29,8 @@ class WcastMediaService : MediaSessionService() {
             private set
 
         const val CHANNEL_ID = "wcast_playback"
+
+        private const val TAG = "WcastMedia"
 
         /** Intent action telling a running service to (re-)apply the "playing" state. */
         private const val ACTION_PLAY = "cloud.morris.wcast.action.PLAY"
@@ -75,6 +78,7 @@ class WcastMediaService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         active = this
+        DebugLog.d(TAG, "onCreate")
         setMediaNotificationProvider(
             DefaultMediaNotificationProvider.Builder(this)
                 .setChannelId(CHANNEL_ID)
@@ -91,11 +95,16 @@ class WcastMediaService : MediaSessionService() {
         // connection would otherwise add the session. This is what connects Media3's
         // internal notification controller and makes the media card appear.
         addSession(mediaSession)
+        DebugLog.d(TAG, "onCreate done: sessionAdded=${isSessionAdded(mediaSession)}")
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession = mediaSession
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession {
+        DebugLog.d(TAG, "onGetSession caller=${controllerInfo.packageName}")
+        return mediaSession
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        DebugLog.d(TAG, "onStartCommand action=${intent?.action} flags=$flags startId=$startId")
         if (intent?.action == ACTION_PLAY) {
             onPlaybackStarted(intent.getStringExtra(EXTRA_TITLE))
         }
@@ -103,6 +112,7 @@ class WcastMediaService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        DebugLog.d(TAG, "onDestroy")
         if (active === this) active = null
         abandonFocus()
         if (::mediaSession.isInitialized) mediaSession.release()
@@ -113,6 +123,7 @@ class WcastMediaService : MediaSessionService() {
     // ── Audio focus (Media3's SimpleBasePlayer does not manage focus) ──────────
 
     private fun onAudioFocusChanged(focusChange: Int) {
+        DebugLog.d(TAG, "audio focus change=$focusChange hasFocus=$hasFocus")
         when (focusChange) {
             AudioManager.AUDIOFOCUS_GAIN -> {
                 hasFocus = true
@@ -146,23 +157,27 @@ class WcastMediaService : MediaSessionService() {
         if (hasFocus) return
         val granted = audioManager.requestAudioFocus(focusRequest)
         hasFocus = granted == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        DebugLog.d(TAG, "requestFocus granted=$granted hasFocus=$hasFocus")
     }
 
     private fun abandonFocus() {
         if (!hasFocus) return
         hasFocus = false
         audioManager.abandonAudioFocusRequest(focusRequest)
+        DebugLog.d(TAG, "abandonFocus")
     }
 
     // ── State pushed from the app's SpeechController ───────────────────────────
 
     fun onPlaybackStarted(title: String?) {
+        DebugLog.d(TAG, "onPlaybackStarted title=$title")
         pausedByFocusLoss = false
         requestFocus()
         player.onStarted(title)
     }
 
     fun onPlaybackPaused() {
+        DebugLog.d(TAG, "onPlaybackPaused")
         player.onPaused()
     }
 
@@ -172,11 +187,13 @@ class WcastMediaService : MediaSessionService() {
      * instead of handing control back to Spotify/AntennaPod.
      */
     fun onPlaybackStopped() {
+        DebugLog.d(TAG, "onPlaybackStopped")
         player.onStopped()
     }
 
     /** Called when the stream fully finishes (no resume target); tears down cleanly. */
     fun onPlaybackFinished() {
+        DebugLog.d(TAG, "onPlaybackFinished")
         abandonFocus()
         player.onFinished()
     }

@@ -5,6 +5,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.SimpleBasePlayer
+import cloud.morris.wcast.DebugLog
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 
@@ -41,6 +42,7 @@ class TtsPlayer : SimpleBasePlayer(Looper.getMainLooper()) {
 
     /** Called when speech starts (or resumes), carrying the article title. */
     fun onStarted(newTitle: String?) {
+        DebugLog.d(TAG, "onStarted newTitle=$newTitle prevStatus=$status")
         if (newTitle != null) title = newTitle
         status = Status.PLAYING
         invalidateState()
@@ -48,24 +50,28 @@ class TtsPlayer : SimpleBasePlayer(Looper.getMainLooper()) {
 
     /** Called when speech pauses mid-stream. */
     fun onPaused() {
+        DebugLog.d(TAG, "onPaused prevStatus=$status")
         status = Status.PAUSED
         invalidateState()
     }
 
     /** Called when speech is explicitly stopped (no resume target). */
     fun onStopped() {
+        DebugLog.d(TAG, "onStopped prevStatus=$status")
         status = Status.STOPPED
         invalidateState()
     }
 
     /** Called when the stream fully finishes; tears down the media card. */
     fun onFinished() {
+        DebugLog.d(TAG, "onFinished prevStatus=$status")
         status = Status.IDLE
         title = null
         invalidateState()
     }
 
     override fun getState(): State {
+        DebugLog.d(TAG, "getState status=$status title=$title")
         val builder = State.Builder().setAvailableCommands(COMMANDS)
         if (status == Status.IDLE) {
             return builder
@@ -91,6 +97,7 @@ class TtsPlayer : SimpleBasePlayer(Looper.getMainLooper()) {
     }
 
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
+        DebugLog.d(TAG, "handleSetPlayWhenReady playWhenReady=$playWhenReady status=$status")
         if (playWhenReady) {
             if (status != Status.PLAYING) {
                 // Resuming a paused stream works; resuming a fully-stopped stream
@@ -108,6 +115,7 @@ class TtsPlayer : SimpleBasePlayer(Looper.getMainLooper()) {
         positionMs: Long,
         seekCommand: Int
     ): ListenableFuture<*> {
+        DebugLog.d(TAG, "handleSeek mediaItemIndex=$mediaItemIndex positionMs=$positionMs seekCommand=$seekCommand")
         when (seekCommand) {
             Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
             Player.COMMAND_SEEK_TO_NEXT -> SpeechControllerBridge.onSkipForward?.invoke()
@@ -123,6 +131,7 @@ class TtsPlayer : SimpleBasePlayer(Looper.getMainLooper()) {
     }
 
     override fun handleStop(): ListenableFuture<*> {
+        DebugLog.d(TAG, "handleStop status=$status")
         SpeechControllerBridge.onStop?.invoke()
         return Futures.immediateVoidFuture()
     }
@@ -141,6 +150,7 @@ class TtsPlayer : SimpleBasePlayer(Looper.getMainLooper()) {
             .build()
 
     private companion object {
+        const val TAG = "WcastPlayer"
         const val UID = "wcast-tts-stream"
         const val MEDIA_ID = "wcast-tts-stream"
         const val WCAST_FALLBACK_TITLE = "Wcast"

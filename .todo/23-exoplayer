@@ -252,3 +252,52 @@ Validation
   (2026-10-14T09:17 PDT), versionName 0.7.
 - `./gradlew testDebugUnitTest` passes.
 - On-device smoke test of the media card + headset buttons still TODO.
+==reply==
+No media card in the drawer. Like the media card is still there in general. I can see it for Antennapod and Spotify, but no media card opens for wcast anymore, one does not appear alongside. Playback does work. Media button from Bluetooth does work For start and stop. Take a look for anything obvious. If there is something obvious, then fix it. If there's not anything obvious and you want more information, then write debug statements and I'll send you another debug log. A current debug log, for what it's worth, is in the resources file and directory that begins with the number 23. I think I'm going to keep logs out of the repository and tickets. I got at least one report of the app keeps crashing From Android, and a few times the app seems to close briefly and coming back to its default state as if it were just opened -- No longer any article text, speech production stops immediately, Goes to the main screen if I was somewhere else, like settings. Sounds like a hard crash that Android is recovering by restarting the app. If you want to tell me how to get those logs for you by ADB, I can try to throw them into the context here. 
+
+==Status Report: 2026-10-14 (debug instrumentation for the no-card/crash regression)==
+
+What changed
+------------
+No functional fix yet — the static wiring checked out against Media3 1.4.1 source
+(MediaNotificationManager / MediaSessionService / DefaultMediaNotificationProvider /
+SimpleBasePlayer all downloaded and read). The Level A code is structurally correct:
+onCreate -> setMediaNotificationProvider -> build session -> addSession is the right
+order, and TtsPlayer's PLAYING state (1-item playlist + STATE_READY + playWhenReady)
+satisfies Media3's shouldShowNotification / shouldRunInForeground conditions. So the
+regression is a runtime subtlety, not an obvious typo.
+
+Added DebugLog instrumentation (no android.util.Log) to make the card/foreground flow
+visible in the in-app "View debug logs" (Settings -> Debug -> Debug logs on):
+- WcastMedia (WcastMediaService.kt): onCreate/onCreate-done(sessionAdded)/onGetSession/
+  onStartCommand/onDestroy, onPlaybackStarted/Paused/Stopped/Finished, audio-focus
+  change + requestFocus(abandon) results.
+- WcastPlayer (TtsPlayer.kt): onStarted/onPaused/onStopped/onFinished (with prev status),
+  getState() status, handleSetPlayWhenReady, handleSeek, handleStop.
+
+Theory linking the two symptoms
+-------------------------------
+If Media3 never posts the notification / never calls startForeground(), there is no
+media card AND on Android 12+ a startForegroundService-without-startForeground can kill
+the process (ForegroundServiceDidNotStartInTimeException / RemoteServiceException),
+which matches the "app restarts with no state" reports. The new logs will show whether
+onPlaybackStarted -> player.onStarted -> getState -> (Media3 notification update) is
+actually completing on-device.
+
+What I need back
+----------------
+1. In-app debug log after: start an article (card absent), pause, resume, press a
+   Bluetooth play/pause + skip a couple times, then stop. Copy the "View debug logs"
+   text (WcastMedia/WcastPlayer lines) into a resources file / the ticket.
+2. ADB logcat for the hard crash (see the instructions I sent in-chat):
+   - `adb logcat -c` then reproduce the crash, then `adb logcat -d -v threadtime`
+   - filter for `AndroidRuntime`, `ActivityManager`, `WcastMedia`, `MediaNtfMng`,
+     `MediaSessionService`, `MediaController`.
+   A `RemoteServiceException` / `ForegroundServiceDidNotStartInTimeException` stack
+   lines would confirm the foreground-service theory.
+
+Validation
+----------
+- assembleDebug + testDebugUnitTest pass; APK regenerated, BUILD_TIME_PT
+  (2026-10-14T11:16 PDT) fresh, versionName 0.7. 
+
