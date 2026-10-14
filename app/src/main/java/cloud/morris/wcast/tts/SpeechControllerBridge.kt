@@ -5,15 +5,15 @@ package cloud.morris.wcast.tts
  * (owned by [WcastMediaService]) and the live [SpeechController] (owned by
  * [cloud.morris.wcast.MainViewModel]).
  *
- * The [WcastMediaService] is a foreground media service that owns an active
- * framework [android.media.session.MediaSession]. It exists independently of the
- * UI so that media-button presses and lock-screen / drawer transport controls
- * are handled even when the activity is not in the foreground. But the actual
- * TTS engine lives inside the ViewModel, which a service cannot hold a
- * reference to. This bridge lets the service ask "stop" / "resume" without
- * knowing anything about ViewModels, and lets the ViewModel tell the service
- * whether there is content currently playing (so a single press knows whether
- * to stop or to resume, exactly like Spotify / AntennaPod).
+ * The [WcastMediaService] is a Media3 `MediaSessionService` that mirrors playback
+ * into a [TtsPlayer] for the media notification, lock-screen / drawer controls and
+ * headset buttons. It exists independently of the UI so those controls keep working
+ * even when the activity is not in the foreground. But the actual TTS engine lives
+ * inside the ViewModel, which a service cannot hold a reference to. This bridge
+ * lets the service ask "stop" / "resume" without knowing anything about ViewModels,
+ * and lets the ViewModel tell the service whether there is content currently playing
+ * (so a single press knows whether to stop or to resume, exactly like Spotify /
+ * AntennaPod).
  *
  * It is intentionally tiny and one-directional: the service calls in (stop /
  * resume), the ViewModel reports state out (playing/stopped). No article data or

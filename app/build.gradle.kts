@@ -90,6 +90,14 @@ dependencies {
     // HTML parsing & DOM scrubbing
     implementation("org.jsoup:jsoup:1.17.2")
 
+    // Media3 media session (ticket 23, Level A): MediaSessionService drives the
+    // media card / lock-screen / headset buttons through a SimpleBasePlayer bridge.
+    // media3-common provides SimpleBasePlayer, media3-session provides the service
+    // + notification. media3-exoplayer is intentionally NOT added yet — SpeechController
+    // still plays each rendered WAV via a framework MediaPlayer until ticket 21 lands.
+    implementation("androidx.media3:media3-common:1.4.1")
+    implementation("androidx.media3:media3-session:1.4.1")
+
     // JVM unit tests for the pure normalization logic
     testImplementation("junit:junit:4.13.2")
     // Real org.json on the JVM test classpath (the app uses Android's built-in

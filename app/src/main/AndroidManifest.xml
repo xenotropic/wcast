@@ -50,32 +50,19 @@
             android:exported="false"
             android:label="@string/app_name" />
 
-        <!-- Foreground playback service: owns the framework MediaSession so wired/
-             Bluetooth headset buttons (and lock-screen/drawer controls) reach this
-             app even when the UI isn't foregrounded, matching how Spotify and
-             AntennaPod handle media keys. Started explicitly via
-             startForegroundService, so no intent-filter is needed. -->
+        <!-- Foreground playback service. Media3's MediaSessionService owns the
+             media session + notification and handles wired/Bluetooth headset
+             buttons and lock-screen/drawer transport controls itself. Started
+             explicitly via startForegroundService; controllers bind through the
+             MediaSessionService intent filter. -->
         <service
             android:name=".tts.WcastMediaService"
-            android:exported="false"
-            android:foregroundServiceType="mediaPlayback" />
-
-        <!-- Receives ACTION_MEDIA_BUTTON broadcasts routed to our MediaSession via
-             setMediaButtonReceiver, so wired/Bluetooth headset play/pause presses
-             reach us and are not handed off to the previously-playing media app. -->
-        <receiver
-            android:name=".tts.MediaButtonReceiver"
-            android:exported="false">
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
             <intent-filter>
-                <action android:name="android.intent.action.MEDIA_BUTTON" />
+                <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
-        </receiver>
-
-        <!-- Receives button taps from the media notification (stop / previous /
-             play-pause / next) and routes them to the active media session. -->
-        <receiver
-            android:name=".tts.MediaControlReceiver"
-            android:exported="false" />
+        </service>
     </application>
 
 </manifest>

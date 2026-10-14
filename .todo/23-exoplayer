@@ -199,3 +199,56 @@ Your three answers, restated as the implementation contract:
 2. Notification: media3 default controls (play/pause + skip, no Stop, no seek bar
    while duration is unknown). Play/pause guaranteed.
 3. Scope: evaluation complete; implement Level A next on your go.
+==reply==
+go.
+
+==Status Report: 2026-10-14 (Level A implemented — media3-session swap)==
+
+What changed
+------------
+Added Media3 1.4.1 media3-session + media3-common (media3-exoplayer deliberately
+NOT added yet — the per-utterance WAV pipeline stays on the framework
+`MediaPlayer` until ticket 21 pre-render lands).
+
+- New `tts/TtsPlayer.kt`: a `SimpleBasePlayer` bridge. It mirrors the TTS state
+  into a fixed single-item, non-seekable playlist (unknown duration -> no seek
+  bar, as agreed). Commands advertised: play/pause, skip next/prev (both the
+  time-based `COMMAND_SEEK_TO_NEXT/PREVIOUS` *and* the
+  `COMMAND_SEEK_TO_NEXT/PREVIOUS_MEDIA_ITEM` variants), `COMMAND_GET_METADATA`,
+  `COMMAND_RELEASE`. No `COMMAND_STOP` -> the explicit Stop action is gone.
+- Rewrote `tts/WcastMediaService.kt` as a `MediaSessionService`: builds the
+  player + `MediaSession` in `onCreate`, returns it from `onGetSession`, and
+  `addSession()`-s it immediately (Wcast's UI never opens a MediaController, so
+  this is what connects Media3's internal notification controller). Starts
+  foreground via `startForegroundService` + a custom ACTION_PLAY intent handled
+  in `onStartCommand`, preserving the existing `active?.onXxx(...)` protocol
+  MainViewModel already uses.
+- Deleted `MediaControlReceiver.kt` + `MediaButtonReceiver.kt` and their manifest
+  entries: Media3's DefaultMediaNotificationProvider + MediaSessionLegacyStub
+  route both the notification actions and ACTION_MEDIA_BUTTON to the service.
+- Manifest: service now `android:exported="true"` with the
+  `androidx.media3.session.MediaSessionService` intent filter and
+  `foregroundServiceType="mediaPlayback"`.
+- Notification: `DefaultMediaNotificationProvider` with channel "Playback"
+  (`playback_channel_name` string) and the existing `ic_notification` small icon.
+  Metadata: title = article title, artist = "Wcast".
+
+Behavior notes / caveats
+------------------------
+- Audio focus is STILL hand-managed in `WcastMediaService` (Media3's
+  `SimpleBasePlayer` does not own focus), preserving stop-on-loss /
+  pause+auto-resume-on-transient-loss. Re-test with a phone call.
+- The media card keeps a paused-style state after explicit Stop (same as before),
+  so Wcast remains the media-button target; pressing play there is a no-op until
+  the user restarts from the UI, matching the old `togglePlayPause` semantics.
+- `KEYCODE_MEDIA_STOP` is no longer mapped to toggles (Media3 dispatches it to
+  `Player.stop()`, which we don't advertise). Headsets essentially never send it;
+  play/pause + skip keys are handled by Media3's default routing.
+- No seek bar (duration unknown). No explicit Stop button (agreed).
+
+Validation
+----------
+- `./gradlew assembleDebug` succeeds; APK regenerated, fresh BUILD_TIME_PT
+  (2026-10-14T09:17 PDT), versionName 0.7.
+- `./gradlew testDebugUnitTest` passes.
+- On-device smoke test of the media card + headset buttons still TODO.

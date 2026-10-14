@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Wcast</string>
+    <string name="playback_channel_name">Playback</string>
 </resources>
