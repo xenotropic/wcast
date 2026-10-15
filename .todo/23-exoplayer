@@ -569,3 +569,61 @@ Validation
   "View debug logs" and confirm `createNotification -> notificationId=1002` appears
   after `onUpdateNotification foreground=true state=3 … timeline=1`, and the rich
   media card (title/artist + transport controls) shows in the shade/lock screen.
+==Status Report: 2026-10-15 (night — fix verified on device; cleanup list for resume)==
+
+On-device result (user report)
+-----------------------------
+Media card now appears and can play / start / stop with no crashing. User will
+keep testing further on device before cutting a release. No tag yet.
+
+Verified fix (already committed f18f0a8)
+-----------------------------------------
+Adding `Player.COMMAND_GET_TIMELINE` + `Player.COMMAND_GET_CURRENT_MEDIA_ITEM`
+to `TtsPlayer.COMMANDS`. Root cause: `MediaNotificationManager.shouldShowNotification()`
+reads the internal controller whose `PlayerInfo` is filtered by
+`filterByAvailableCommands` — without those two commands its timeline is forced
+EMPTY, and the card was dropped before `createNotification` ran.
+
+Cleanup to do before/next (ticket-23 instrumentation is now dead weight)
+-----------------------------------------------------------------------
+Priority 1 — remove the structural debug wrappers in `WcastMediaService.kt`:
+1. Delete the `DebugMediaNotificationProvider` class (~lines 296-333) and revert
+   its wiring at onCreate (~line 118):
+       setMediaNotificationProvider(mediaNotificationProvider)   // was DebugMediaNotificationProvider(…)
+   This orphans these imports → remove them too:
+   - `androidx.media3.session.CommandButton`
+   - `androidx.media3.session.MediaNotification`
+   - `com.google.common.collect.ImmutableList`
+   - `android.os.Bundle`
+2. Delete the `onUpdateNotification(session, startInForegroundRequired)` override
+   (~lines 174-182) — it only logs and delegates to super.
+3. Delete the notification-state debug block at the bottom of
+   `createPlaybackChannel()` (~lines 167-171, the `DebugLog.d("channel importance…")`
+   line). This orphans `androidx.core.app.NotificationManagerCompat` → remove it.
+
+Priority 2 (optional / judgement call — DebugLog.d is a no-op when off):
+- Trim the remaining ticket-23 lifecycle `DebugLog.d` lines added during the
+  regression (onCreate done/sessionAdded, startForeground id=, onGetSession
+  caller=, onStartCommand args). Harmless per AGENTS.md but they are noise; leave
+  only the ones still useful (playback state transitions + focus are genuinely
+  useful for field reports). Grep `DebugLog.d` in WcastMediaService.kt.
+
+Deferred (bigger — already noted in the "deferred FGS refactor" above):
+- The synchronous `startForegroundNow()` bootstrap is still load-bearing against
+  the first-play ForegroundServiceDidNotStartInTimeException. Do NOT remove it
+  without a full foreground/notification refactor (stop-foreground + stopSelf on
+  explicit stop, custom `MediaNotification.Provider` for the Stop button), and
+  only after more soak testing.
+
+Not-a-bug (do not chase, but worth remembering):
+- The card still has no seek bar / duration: Level A keeps each paragraph as its
+  own non-seekable MediaItemData (setIsSeekable(false) + PLAYBACK_POSITION_UNKNOWN).
+  A real seek bar/duration is the Level B continuous-timeline rework, not this fix.
+
+Where to pick up on resume
+--------------------------
+1. User finishes device soak testing (media card, Bluetooth controls, skip/resume,
+   no 30s FGS crash).
+2. Then: cleanup Priority 1 (+ decide on Priority 2), rebuild `assembleDebug`,
+   verify fresh BuildConfig + no stale imports, re-test once more.
+3. Then user decides whether to tag (v*) for a release build.
