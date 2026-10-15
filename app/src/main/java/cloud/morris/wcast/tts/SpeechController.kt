@@ -545,7 +545,18 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         }
         paused = false
         if (player != null) {
-            try { player?.start() } catch (_: Exception) { enqueueFrom(currentIndex) }
+            try {
+                player?.start()
+                // Resuming the same rendered chunk: re-announce it so the UI
+                // restores the active-position / left-margin highlight that
+                // pause() cleared.
+                if (currentIndex in queue.indices) {
+                    DebugLog.d(TAG, "resume re-announce index=$currentIndex")
+                    onUtteranceStarted?.invoke(currentIndex, queue[currentIndex])
+                }
+            } catch (_: Exception) {
+                enqueueFrom(currentIndex)
+            }
         } else {
             enqueueFrom(currentIndex)
         }

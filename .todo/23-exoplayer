@@ -409,3 +409,116 @@ On-device follow-up
 1. Start an article -> card appears AND becomes the rich card.
 2. Play/pause/resume repeatedly via Bluetooth -> no
    ForegroundServiceDidNotStartInTimeException within 30s and card persists.
+==Status Report: 2026-10-15 (ticket 23 regressions — skip kills the card/BT, resume drops the blue bar)==
+
+Follow-on from the 2026-10-14 minimal FGS fix. That fix held on-device (no
+ForegroundServiceDidNotStartInTimeException in the captured logs), but three
+regressions surfaced after it:
+
+1. Media notification card missing.
+2. Bluetooth / media-button presses ignored.
+3. Sidebar (left-margin blue progress line) stops advancing / disappears.
+
+Root cause A — skip during single-section playback (card + BT)
+---------------------------------------------------------------
+`MainViewModel.skipRelative()`'s single-section branch called
+`stopSpeaking()` (→ onPlaybackFinished + onPlaybackStopped, so the session goes
+STOPPED / title=null) and then `speechController.speakSection(target)` (audio
+restarts), but it NEVER re-ran `onPlaybackStarted()`. Every other entry point
+(playWholeArticle/playSection/playParagraph/resumeFromSavedLocation/
+resumeSpeaking) does. Result: the media session was left STOPPED, so the card
+vanished and `TtsPlayer.handleSetPlayWhenReady` ignored the first media-key
+press (it only pauses when status == PLAYING). The in-app pause→play worked
+around it because `resumeSpeaking()` re-synced the session. Signature in the
+log: `stream start utterances=N` bursts with no matching `onPlaybackStarted`.
+
+Fix: `skipRelative` now calls `onPlaybackStarted(state.title)` after starting
+the target section, mirroring `playSection`.
+
+Root cause B — blue bar gone after pause/play
+---------------------------------------------
+`pauseSpeaking()` clears `_activePosition` (intentional — the indicator hides
+while paused). A true mid-chunk resume goes through `SpeechController.resume()`'s
+`MediaPlayer.start()` path, which never re-fires `onUtteranceStarted`, so
+`_activePosition` stayed null until the *next* chunk began. No NPE — the UI just
+renders no row as active. This is why "pause → play" brought back BT but left
+the blue bar missing.
+
+Fix: `SpeechController.resume()` re-announces the current utterance via
+`onUtteranceStarted` on a successful `player?.start()`, restoring the
+active-position / left-margin highlight.
+
+Debug instrumentation added (in-app, DebugLog.d / WCAST_DEBUG)
+-------------------------------------------------------------
+- `MainViewModel.onPlaybackStarted` now logs title + whether the service was
+  already active — the single most useful line to classify future "no card /
+  BT ignored" as "onPlaybackStarted never fired" vs "fired but session failed".
+- `MainViewModel.onUtteranceStarted` logs sectionId/paragraphIndex (blue-bar data).
+- `skipRelative` logs the section->section jump; `resume` logs its re-announce.
+- `MainViewModel` gained a `TAG = "WcastVM"` (DebugLog is same-package).
+
+Validation pending
+------------------
+- ./gradlew assembleDebug (confirm APK regenerates + fresh BUILD_TIME_PT).
+- ./gradlew testDebugUnitTest.
+- On-device: play one section → skip next/back → card appears + BT pause/play
+  responds immediately; then pause → play → blue bar returns.
+==reply==
+Seems like blue bar and Bluetooth work now Next one will be about getting MediaCard to work which is still not showing up
+
+==Status Report: 2026-10-15 (media-card regression — notification-lifecycle instrumentation)==
+
+Scope: the media card never appears; only the plain "Wcast is ready" bootstrap
+notification shows, even though audio plays and the media buttons/controls work.
+Confirmed up front that `POST_NOTIFICATIONS` is NOT the cause — Media3 media-session
+notifications are exempt from it entirely.
+
+Root-cause hypothesis
+---------------------
+Media3 1.4.1 only posts the rich card from
+`MediaNotificationManager.updateNotification()`, which is gated by
+`shouldShowNotification(session)`. That gate requires Media3's async *internal*
+`MediaController` to finish connecting with a non-empty timeline and a non-IDLE
+playback state. If it connects while the player is still IDLE (or before the
+session is added), `onConnected(false)` drops the notification and nothing later
+re-fires it. Prior logs confirmed play state, foreground deadline, and permission
+are all fine — the break is inside Media3's async notification gate.
+
+Instrumentation added to `WcastMediaService.kt` (in-app DebugLog / WCAST_DEBUG)
+----------------------------------------------------------------------------
+- Overrode `onUpdateNotification(session, startInForegroundRequired)` to log the
+  foreground flag plus player playbackState / playWhenReady / timeline windowCount,
+  then delegate to `super`. This tells us whether Media3's session listener or its
+  internal controller ever requests a notification update after playback starts.
+- Added `DebugMediaNotificationProvider`, a thin `MediaNotification.Provider`
+  wrapper around `DefaultMediaNotificationProvider` (delegating createNotification
+  + handleCustomCommand). It logs entry (state/playWhenReady/timeline/customLayout
+  size) and the resulting notificationId. Required because the default provider's
+  `createNotification` is `final` in Media3 1.4.1, so subclassing can't intercept it.
+- Wired the wrapper via `setMediaNotificationProvider(...)` in `onCreate`.
+- `createPlaybackChannel()` now logs channel importance and
+  `NotificationManagerCompat.areNotificationsEnabled()`.
+
+Decision on the debug ring-buffer window
+----------------------------------------
+Kept `DebugLog.MAX_ENTRIES` at 1000 (unchanged): a single play test emits only a
+few dozen lines and the whole run lives in one process lifetime, so no expansion
+is needed.
+
+Validation steps (pending on-device play test)
+----------------------------------------------
+1. Build done: `./gradlew assembleDebug testDebugUnitTest` BUILD SUCCESSFUL.
+2. APK regenerated 2026-10-15 03:17:12 UTC (20,146,837 bytes);
+   BuildConfig BUILD_TIME_PT fresh: 2026-10-14T20:17:10 PDT (versionName 0.7).
+3. On device: Settings → Debug → enable "Debug logs"; play one article; export
+   "View debug logs" and inspect:
+   - Does `WcastMedia onUpdateNotification ...` appear after `WcastPlayer getState
+     status=PLAYING`? If never, Media3 never asked for a notification update.
+   - If it appears with `foreground=false`, `shouldRunInForeground` /
+     `shouldShowNotification` are false (internal controller not connected /
+     empty timeline / IDLE).
+   - If `createNotification -> notificationId=...` appears, the provider built a
+     card and the failure is in the notify/startForeground posting step.
+4. Implement the targeted fix from those findings — likely decoupling the card
+   from Media3's async controller timing (drive from onPlaybackStarted/Paused/
+   Stopped/Finished, or hold our own MediaController to re-trigger the update).

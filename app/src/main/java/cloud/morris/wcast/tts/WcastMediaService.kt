@@ -11,11 +11,16 @@ import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
+import android.os.Bundle
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
+import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
+import androidx.media3.session.MediaNotification
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import cloud.morris.wcast.DebugLog
+import com.google.common.collect.ImmutableList
 import cloud.morris.wcast.MainActivity
 import cloud.morris.wcast.R
 
@@ -105,13 +110,12 @@ class WcastMediaService : MediaSessionService() {
         // controller connect, which can miss the deadline.
         startForegroundNow()
 
-        setMediaNotificationProvider(
-            DefaultMediaNotificationProvider.Builder(this)
-                .setChannelId(CHANNEL_ID)
-                .setChannelName(R.string.playback_channel_name)
-                .build()
-                .apply { setSmallIcon(R.drawable.ic_notification) }
-        )
+        val mediaNotificationProvider = DefaultMediaNotificationProvider.Builder(this)
+            .setChannelId(CHANNEL_ID)
+            .setChannelName(R.string.playback_channel_name)
+            .build()
+            .apply { setSmallIcon(R.drawable.ic_notification) }
+        setMediaNotificationProvider(DebugMediaNotificationProvider(mediaNotificationProvider))
         player = TtsPlayer()
         mediaSession = MediaSession.Builder(this, player)
             .setSessionActivity(appContentIntent())
@@ -160,6 +164,21 @@ class WcastMediaService : MediaSessionService() {
         )
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
             .createNotificationChannel(channel)
+        DebugLog.d(
+            TAG,
+            "channel importance=${channel.importance} notificationsEnabled=" +
+                NotificationManagerCompat.from(this).areNotificationsEnabled()
+        )
+    }
+
+    override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
+        val player = session.player
+        DebugLog.d(
+            TAG,
+            "onUpdateNotification foreground=$startInForegroundRequired state=${player.playbackState} " +
+                "playWhenReady=${player.playWhenReady} timeline=${player.currentTimeline.windowCount}"
+        )
+        super.onUpdateNotification(session, startInForegroundRequired)
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession {
@@ -272,5 +291,44 @@ class WcastMediaService : MediaSessionService() {
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+    }
+
+    /**
+     * Thin [MediaNotification.Provider] that wraps [DefaultMediaNotificationProvider] and traces
+     * Media3's notification-creation path for the media-card regression (ticket 23). The default
+     * provider's `createNotification` is final in Media3 1.4.1, so we intercept at the interface
+     * level rather than by subclassing.
+     */
+    private class DebugMediaNotificationProvider(
+        private val delegate: DefaultMediaNotificationProvider
+    ) : MediaNotification.Provider {
+
+        override fun createNotification(
+            mediaSession: MediaSession,
+            customLayout: ImmutableList<CommandButton>,
+            actionFactory: MediaNotification.ActionFactory,
+            onNotificationChangedCallback: MediaNotification.Provider.Callback
+        ): MediaNotification {
+            val player = mediaSession.player
+            DebugLog.d(
+                TAG,
+                "createNotification state=${player.playbackState} playWhenReady=${player.playWhenReady} " +
+                    "timeline=${player.currentTimeline.windowCount} customLayout=${customLayout.size}"
+            )
+            val notification = delegate.createNotification(
+                mediaSession,
+                customLayout,
+                actionFactory,
+                onNotificationChangedCallback
+            )
+            DebugLog.d(TAG, "createNotification -> notificationId=${notification.notificationId}")
+            return notification
+        }
+
+        override fun handleCustomCommand(
+            session: MediaSession,
+            action: String,
+            extras: Bundle
+        ): Boolean = delegate.handleCustomCommand(session, action, extras)
     }
 }

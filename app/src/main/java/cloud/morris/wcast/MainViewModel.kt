@@ -18,6 +18,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+/** Tag for in-app debug logging (Settings → Debug → "View debug logs"). */
+private const val TAG = "WcastVM"
+
 /** UI state for the main screen (unidirectional data flow). */
 sealed interface UiState {
     data object Idle : UiState
@@ -133,6 +136,7 @@ class MainViewModel : AndroidViewModel {
                 SpeakingState.WholeArticle
             }
             _activePosition.value = ActivePosition(sectionId, utterance.paragraphIndex)
+            DebugLog.d(TAG, "utteranceStarted sectionId=$sectionId paragraphIndex=${utterance.paragraphIndex}")
             // Maintain the saved play location for a bookmarked article as it plays.
             persistPositionIfBookmarked(sectionId, utterance.paragraphIndex)
         }
@@ -295,6 +299,7 @@ class MainViewModel : AndroidViewModel {
      * media-button press will pause (and the next one resume).
      */
     private fun onPlaybackStarted(title: String?) {
+        DebugLog.d(TAG, "onPlaybackStarted title=$title serviceActive=${WcastMediaService.active != null}")
         // On the *first* play (`active` is still null) start the service with the
         // play command in the intent, so the once-created service applies focus +
         // session state in onStartCommand and its onCreate bootstrap takes the
@@ -395,6 +400,7 @@ class MainViewModel : AndroidViewModel {
                 val index = state.sections.indexOfFirst { it.id == current.id }
                 if (index < 0) return
                 val target = state.sections.getOrNull(index + delta) ?: return
+                DebugLog.d(TAG, "skipRelative section ${current.id} -> ${target.id} delta=$delta")
                 // Skip steps one flat section at a time (mirroring the keyboard
                 // next/previous affordance), so it speaks exactly the neighbouring
                 // section rather than expanding it into its subtree the way the
@@ -402,6 +408,11 @@ class MainViewModel : AndroidViewModel {
                 stopSpeaking()
                 speechController.speakSection(target)
                 _speakingState.value = SpeakingState.Section(target.id)
+                // Re-sync the media session exactly like playSection/playArticle do;
+                // without this, skip leaves the session STOPPED (title=null): the
+                // media card disappears and media/Bluetooth buttons are ignored
+                // until a manual pause+play.
+                onPlaybackStarted(state.title)
             }
 
             SpeakingState.None -> Unit
