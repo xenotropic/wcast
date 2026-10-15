@@ -162,6 +162,8 @@ class TtsPlayer : SimpleBasePlayer(Looper.getMainLooper()) {
             .add(Player.COMMAND_SEEK_TO_PREVIOUS)
             .add(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
             .add(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+            .add(Player.COMMAND_GET_CURRENT_MEDIA_ITEM)
+            .add(Player.COMMAND_GET_TIMELINE)
             .add(Player.COMMAND_GET_METADATA)
             .add(Player.COMMAND_RELEASE)
             .build()

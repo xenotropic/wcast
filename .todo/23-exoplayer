@@ -522,3 +522,50 @@ Validation steps (pending on-device play test)
 4. Implement the targeted fix from those findings — likely decoupling the card
    from Media3's async controller timing (drive from onPlaybackStarted/Paused/
    Stopped/Finished, or hold our own MediaController to re-trigger the update).
+==Status Report: 2026-10-15 (media-card root cause + fix — missing Player commands)==
+
+Root cause (confirmed against Media3 1.4.1 source)
+--------------------------------------------------
+Correction to the 2026-10-14 status, which rejected Gemini's "add
+COMMAND_GET_CURRENT_MEDIA_ITEM / COMMAND_GET_TIMELINE" advice. That rejection was
+half right, half wrong:
+
+- Still correct: removing the synchronous `startForegroundNow()` bootstrap would
+  reintroduce the first-play FGS deadline crash. Gemini's step 2 stays rejected.
+- The error: we concluded the missing commands were irrelevant because
+  `DefaultMediaNotificationProvider.createNotification` never calls those getters.
+  That only inspected the *session* player (the raw `PlayerWrapper`). It missed that
+  `MediaNotificationManager.shouldShowNotification()` never reads the session player
+  at all — it reads the async *internal* `MediaController`, whose `PlayerInfo` is
+  filtered by `PlayerInfo.filterByAvailableCommands(...)`:
+      if (!canAccessTimeline && canAccessCurrentMediaItem && !timeline.isEmpty()) {…}
+      else if (excludeTimeline || !canAccessTimeline) setTimeline(Timeline.EMPTY);
+  where `canAccessTimeline` = COMMAND_GET_TIMELINE present and
+  `canAccessCurrentMediaItem` = COMMAND_GET_CURRENT_MEDIA_ITEM present. TtsPlayer
+  declared neither, so the controller's timeline was forced EMPTY,
+  `shouldShowNotification` returned false, and the card was silently dropped before
+  `createNotification` ever ran. This matches the device log exactly: only the plain
+  bootstrap card shows.
+
+So Gemini was right about the *missing commands* (the actual fix), though its stated
+mechanism — "can't read the MediaItem, so can't get title/metadata" — was imprecise:
+COMMAND_GET_METADATA was already present, and the real gate is the timeline filter
+above (well articulated in today's trace: PlayerWrapper.createPlayerInfoForBundling
+and MediaControllerImplBase apply the same WithCommandCheck filtering).
+
+Fix
+---
+`TtsPlayer.kt` COMMANDS now adds `Player.COMMAND_GET_CURRENT_MEDIA_ITEM` and
+`Player.COMMAND_GET_TIMELINE` (COMMAND_GET_METADATA was already present). The
+synchronous `startForegroundNow()` bootstrap is kept as-is.
+
+Validation
+----------
+- `./gradlew assembleDebug` BUILD SUCCESSFUL (compiled changed Kotlin + dex + package).
+- APK regenerated 2026-10-15 03:56:43 UTC (20,146,837 bytes, same size — only a
+  command-list constant change); BuildConfig BUILD_TIME_PT fresh:
+  2026-10-14T20:56:41 PDT (versionName 0.7).
+- On-device (832) pending: Settings → Debug → "Debug logs", play one article, export
+  "View debug logs" and confirm `createNotification -> notificationId=1002` appears
+  after `onUpdateNotification foreground=true state=3 … timeline=1`, and the rich
+  media card (title/artist + transport controls) shows in the shade/lock screen.
