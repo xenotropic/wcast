@@ -1,0 +1,202 @@
+This is a bug from Strange Behavior During Playback. This is a long article, Foxes, that I was listening to and the voice started reading twice at the same time, so it seemed like there were like two playback engines running at the same time, overlapping each other. Then they both stopped, and the media card disappeared. So it looks like there was some sort of queuing error or something like that. See if the logs are informative. Pressing the in-app control bar pause and resume reconstructs the card and playback resumes at its normal location. The whole app isn't lost. It just seems like there's an in-app like media card kind of crash. 
+
+===
+[WCAST_DEBUG] 2026-10-15 10:51:17.143 WcastTTS: stream start utterances=65
+[WCAST_DEBUG] 2026-10-15 10:51:17.144 WcastTTS: synth start index=0/65 textLen=7
+[WCAST_DEBUG] 2026-10-15 10:51:17.148 WcastTTS: synthesizeToFile index=0 result=0 renderMs=3 bytes=0
+[WCAST_DEBUG] 2026-10-15 10:51:17.148 WcastVM: onPlaybackStarted title=Chicken serviceActive=false
+[WCAST_DEBUG] 2026-10-15 10:51:17.184 WcastMedia: onCreate
+[WCAST_DEBUG] 2026-10-15 10:51:17.187 WcastMedia: channel importance=2 notificationsEnabled=true
+[WCAST_DEBUG] 2026-10-15 10:51:17.188 WcastMedia: startForeground id=1001
+[WCAST_DEBUG] 2026-10-15 10:51:17.196 WcastPlayer: getState status=IDLE title=null
+[WCAST_DEBUG] 2026-10-15 10:51:17.207 WcastMedia: onCreate done: sessionAdded=true
+[WCAST_DEBUG] 2026-10-15 10:51:17.207 WcastMedia: onStartCommand action=cloud.morris.wcast.action.PLAY flags=0 startId=1
+[WCAST_DEBUG] 2026-10-15 10:51:17.207 WcastMedia: onPlaybackStarted title=Chicken
+[WCAST_DEBUG] 2026-10-15 10:51:17.210 WcastMedia: requestFocus granted=1 hasFocus=true
+[WCAST_DEBUG] 2026-10-15 10:51:17.210 WcastPlayer: onStarted newTitle=Chicken prevStatus=IDLE
+[WCAST_DEBUG] 2026-10-15 10:51:17.210 WcastPlayer: getState status=PLAYING title=Chicken
+[WCAST_DEBUG] 2026-10-15 10:51:17.233 WcastMedia: onUpdateNotification foreground=true state=3 playWhenReady=true timeline=1
+[WCAST_DEBUG] 2026-10-15 10:51:17.233 WcastMedia: createNotification state=3 playWhenReady=true timeline=1 customLayout=0
+[WCAST_DEBUG] 2026-10-15 10:51:17.236 WcastMedia: createNotification -> notificationId=1001
+[WCAST_DEBUG] 2026-10-15 10:51:17.239 WcastMedia: onStartCommand action=null flags=0 startId=2
+[WCAST_DEBUG] 2026-10-15 10:51:18.666 WcastTTS: synth done index=0 renderMs=1521 buffered=false readyIndices=0
+[WCAST_DEBUG] 2026-10-15 10:51:18.728 WcastTTS: play start index=0 gapMs=1585 durationMs=720 bytes=34604
+[WCAST_DEBUG] 2026-10-15 10:51:18.729 WcastVM: utteranceStarted sectionId=null paragraphIndex=null
+[WCAST_DEBUG] 2026-10-15 10:51:18.730 WcastTTS: topUpLookAhead begin frontier=1 horizon=3 buffer=0
+[WCAST_DEBUG] 2026-10-15 10:51:18.731 WcastTTS: synth start index=1/65 textLen=356
+[WCAST_DEBUG] 2026-10-15 10:51:18.734 WcastTTS: synthesizeToFile index=1 result=0 renderMs=3 bytes=0
+[WCAST_DEBUG] 2026-10-15 10:51:20.407 WcastTTS: utterance ended index=0 readyIndices=0 synthInFlight=true synthIndex=1
+[WCAST_DEBUG] 2026-10-15 10:51:42.238 WcastTTS: synth done index=1 renderMs=23507 buffered=false readyIndices=0
+[WCAST_DEBUG] 2026-10-15 10:51:42.294 WcastTTS: play start index=1 gapMs=21887 durationMs=21280 bytes=1021484
+[WCAST_DEBUG] 2026-10-15 10:51:42.295 WcastVM: utteranceStarted sectionId=lead paragraphIndex=0
+[WCAST_DEBUG] 2026-10-15 10:51:42.296 WcastTTS: topUpLookAhead begin frontier=2 horizon=4 buffer=0
+[WCAST_DEBUG] 2026-10-15 10:51:42.296 WcastTTS: synth start index=2/65 textLen=532
+[WCAST_DEBUG] 2026-10-15 10:51:42.299 WcastTTS: synthesizeToFile index=2 result=0 renderMs=2 bytes=0
+[WCAST_DEBUG] 2026-10-15 10:52:04.303 WcastTTS: utterance ended index=1 readyIndices=0 synthInFlight=true synthIndex=2
+[WCAST_DEBUG] 2026-10-15 10:52:17.244 WcastTTS: synth done index=2 renderMs=34947 buffered=false readyIndices=0
+[WCAST_DEBUG] 2026-10-15 10:52:17.293 WcastTTS: play start index=2 gapMs=12989 durationMs=31920 bytes=1532204
+[WCAST_DEBUG] 2026-10-15 10:52:17.294 WcastVM: utteranceStarted sectionId=lead paragraphIndex=1
+[WCAST_DEBUG] 2026-10-15 10:52:17.294 WcastTTS: topUpLookAhead begin frontier=3 horizon=5 buffer=0
+[WCAST_DEBUG] 2026-10-15 10:52:17.295 WcastTTS: synth start index=3/65 textLen=9
+[WCAST_DEBUG] 2026-10-15 10:52:17.298 WcastTTS: synthesizeToFile index=3 result=0 renderMs=3 bytes=0
+[WCAST_DEBUG] 2026-10-15 10:52:19.338 WcastTTS: synth done index=3 renderMs=2044 buffered=true readyIndices=0
+[WCAST_DEBUG] 2026-10-15 10:52:19.339 WcastTTS: topUpLookAhead begin frontier=4 horizon=5 buffer=1
+[WCAST_DEBUG] 2026-10-15 10:52:19.339 WcastTTS: synth start index=4/65 textLen=266
+[WCAST_DEBUG] 2026-10-15 10:52:19.341 WcastTTS: synthesizeToFile index=4 result=0 renderMs=1 bytes=0
+[WCAST_DEBUG] 2026-10-15 10:52:35.260 WcastTTS: synth done index=4 renderMs=15920 buffered=true readyIndices=1
+[WCAST_DEBUG] 2026-10-15 10:52:35.261 WcastTTS: topUpLookAhead begin frontier=5 horizon=5 buffer=2
+[WCAST_DEBUG] 2026-10-15 10:52:35.261 WcastTTS: synth start index=5/65 textLen=12
+[WCAST_DEBUG] 2026-10-15 10:52:35.263 WcastTTS: synthesizeToFile index=5 result=0 renderMs=2 bytes=0
+[WCAST_DEBUG] 2026-10-15 10:52:37.420 WcastTTS: synth done index=5 renderMs=2159 buffered=true readyIndices=2
+[WCAST_DEBUG] 2026-10-15 10:52:49.939 WcastTTS: utterance ended index=2 readyIndices=3 synthInFlight=false synthIndex=null
+[WCAST_DEBUG] 2026-10-15 10:52:50.010 WcastTTS: play start index=3 gapMs=71 durationMs=1200 bytes=57644
+[WCAST_DEBUG] 2026-10-15 10:52:50.012 WcastVM: utteranceStarted sectionId=etymology paragraphIndex=null
+[WCAST_DEBUG] 2026-10-15 10:52:50.013 WcastTTS: topUpLookAhead begin frontier=6 horizon=6 buffer=2
+[WCAST_DEBUG] 2026-10-15 10:52:50.014 WcastTTS: synth start index=6/65 textLen=27
+[WCAST_DEBUG] 2026-10-15 10:52:50.018 WcastTTS: synthesizeToFile index=6 result=0 renderMs=5 bytes=0
+[WCAST_DEBUG] 2026-10-15 10:52:51.829 WcastTTS: utterance ended index=3 readyIndices=2 synthInFlight=true synthIndex=6
+[WCAST_DEBUG] 2026-10-15 10:52:51.887 WcastTTS: play start index=4 gapMs=57 durationMs=14320 bytes=687404
+[WCAST_DEBUG] 2026-10-15 10:52:51.887 WcastVM: utteranceStarted sectionId=etymology paragraphIndex=0
+[WCAST_DEBUG] 2026-10-15 10:52:52.642 WcastTTS: synth done index=6 renderMs=2629 buffered=true readyIndices=1
+[WCAST_DEBUG] 2026-10-15 10:52:52.643 WcastTTS: topUpLookAhead begin frontier=7 horizon=7 buffer=2
+[WCAST_DEBUG] 2026-10-15 10:52:52.643 WcastTTS: synth start index=7/65 textLen=46
+[WCAST_DEBUG] 2026-10-15 10:52:52.645 WcastTTS: synthesizeToFile index=7 result=0 renderMs=2 bytes=0
+[WCAST_DEBUG] 2026-10-15 10:52:57.342 WcastTTS: synth done index=7 renderMs=4698 buffered=true readyIndices=2
+[WCAST_DEBUG] 2026-10-15 10:53:06.764 WcastTTS: utterance ended index=4 readyIndices=3 synthInFlight=false synthIndex=null
+[WCAST_DEBUG] 2026-10-15 10:53:06.831 WcastTTS: play start index=5 gapMs=66 durationMs=1360 bytes=65324
+[WCAST_DEBUG] 2026-10-15 10:53:06.832 WcastVM: utteranceStarted sectionId=nomenclature paragraphIndex=null
+[WCAST_DEBUG] 2026-10-15 10:53:06.833 WcastTTS: topUpLookAhead begin frontier=8 horizon=8 buffer=2
+[WCAST_DEBUG] 2026-10-15 10:53:06.835 WcastTTS: synth start index=8/65 textLen=45
+[WCAST_DEBUG] 2026-10-15 10:53:06.841 WcastTTS: synthesizeToFile index=8 result=0 renderMs=6 bytes=0
+[WCAST_DEBUG] 2026-10-15 10:53:08.829 WcastTTS: utterance ended index=5 readyIndices=2 synthInFlight=true synthIndex=8
+[WCAST_DEBUG] 2026-10-15 10:53:08.892 WcastTTS: play start index=6 gapMs=62 durationMs=2000 bytes=96044
+[WCAST_DEBUG] 2026-10-15 10:53:08.892 WcastVM: utteranceStarted sectionId=nomenclature paragraphIndex=0
+[WCAST_DEBUG] 2026-10-15 10:53:10.735 WcastTTS: synth done index=8 renderMs=3901 buffered=true readyIndices=1
+[WCAST_DEBUG] 2026-10-15 10:53:10.736 WcastTTS: topUpLookAhead begin frontier=9 horizon=9 buffer=2
+[WCAST_DEBUG] 2026-10-15 10:53:10.738 WcastTTS: synth start index=9/65 textLen=24
+[WCAST_DEBUG] 2026-10-15 10:53:10.743 WcastTTS: synthesizeToFile index=9 result=0 renderMs=5 bytes=0
+[WCAST_DEBUG] 2026-10-15 10:53:11.504 WcastTTS: utterance ended index=6 readyIndices=2 synthInFlight=true synthIndex=9
+[WCAST_DEBUG] 2026-10-15 10:53:11.534 WcastTTS: play start index=7 gapMs=30 durationMs=4320 bytes=207404
+[WCAST_DEBUG] 2026-10-15 10:53:11.535 WcastVM: utteranceStarted sectionId=nomenclature paragraphIndex=1
+[WCAST_DEBUG] 2026-10-15 10:53:13.131 WcastTTS: synth done index=9 renderMs=2394 buffered=true readyIndices=1
+[WCAST_DEBUG] 2026-10-15 10:53:13.133 WcastTTS: topUpLookAhead begin frontier=10 horizon=10 buffer=2
+[WCAST_DEBUG] 2026-10-15 10:53:13.135 WcastTTS: synth start index=10/65 textLen=52
+[WCAST_DEBUG] 2026-10-15 10:53:13.139 WcastTTS: synthesizeToFile index=10 result=0 renderMs=4 bytes=0
+[WCAST_DEBUG] 2026-10-15 10:53:16.457 WcastTTS: utterance ended index=7 readyIndices=2 synthInFlight=true synthIndex=10
+[WCAST_DEBUG] 2026-10-15 10:53:16.525 WcastTTS: play start index=8 gapMs=67 durationMs=3280 bytes=157484
+[WCAST_DEBUG] 2026-10-15 10:53:16.526 WcastVM: utteranceStarted sectionId=nomenclature paragraphIndex=2
+[WCAST_DEBUG] 2026-10-15 10:53:18.777 WcastTTS: synth done index=10 renderMs=5642 buffered=true readyIndices=1
+[WCAST_DEBUG] 2026-10-15 10:53:18.779 WcastTTS: topUpLookAhead begin frontier=11 horizon=11 buffer=2
+[WCAST_DEBUG] 2026-10-15 10:53:18.781 WcastTTS: synth start index=11/65 textLen=36
+[WCAST_DEBUG] 2026-10-15 10:53:18.785 WcastTTS: synthesizeToFile index=11 result=0 renderMs=4 bytes=0
+[WCAST_DEBUG] 2026-10-15 10:53:20.545 WcastTTS: utterance ended index=8 readyIndices=2 synthInFlight=true synthIndex=11
+[WCAST_DEBUG] 2026-10-15 10:53:20.606 WcastTTS: play start index=9 gapMs=61 durationMs=1600 bytes=76844
+[WCAST_DEBUG] 2026-10-15 10:53:20.607 WcastVM: utteranceStarted sectionId=nomenclature paragraphIndex=3
+[WCAST_DEBUG] 2026-10-15 10:53:22.202 WcastTTS: synth done index=11 renderMs=3421 buffered=true readyIndices=1
+[WCAST_DEBUG] 2026-10-15 10:53:22.204 WcastTTS: topUpLookAhead begin frontier=12 horizon=12 buffer=2
+[WCAST_DEBUG] 2026-10-15 10:53:22.208 WcastTTS: synth start index=12/65 textLen=32
+[WCAST_DEBUG] 2026-10-15 10:53:22.214 WcastTTS: synthesizeToFile index=12 result=0 renderMs=6 bytes=0
+[WCAST_DEBUG] 2026-10-15 10:53:22.767 WcastTTS: utterance ended index=9 readyIndices=2 synthInFlight=true synthIndex=12
+[WCAST_DEBUG] 2026-10-15 10:53:22.821 WcastTTS: play start index=10 gapMs=54 durationMs=5280 bytes=253484
+[WCAST_DEBUG] 2026-10-15 10:53:22.822 WcastVM: utteranceStarted sectionId=nomenclature paragraphIndex=4
+[WCAST_DEBUG] 2026-10-15 10:53:24.915 WcastTTS: synth done index=12 renderMs=2708 buffered=true readyIndices=1
+[WCAST_DEBUG] 2026-10-15 10:53:24.916 WcastTTS: topUpLookAhead begin frontier=13 horizon=13 buffer=2
+[WCAST_DEBUG] 2026-10-15 10:53:24.918 WcastTTS: synth start index=13/65 textLen=30
+[WCAST_DEBUG] 2026-10-15 10:53:24.922 WcastTTS: synthesizeToFile index=13 result=0 renderMs=4 bytes=0
+[WCAST_DEBUG] 2026-10-15 10:53:27.877 WcastTTS: synth done index=13 renderMs=2959 buffered=true readyIndices=2
+[WCAST_DEBUG] 2026-10-15 10:53:28.689 WcastTTS: utterance ended index=10 readyIndices=3 synthInFlight=false synthIndex=null
+[WCAST_DEBUG] 2026-10-15 10:53:28.757 WcastTTS: play start index=11 gapMs=68 durationMs=2720 bytes=130604
+[WCAST_DEBUG] 2026-10-15 10:53:28.758 WcastVM: utteranceStarted sectionId=nomenclature paragraphIndex=5
+[WCAST_DEBUG] 2026-10-15 10:53:28.759 WcastTTS: topUpLookAhead begin frontier=14 horizon=14 buffer=2
+[WCAST_DEBUG] 2026-10-15 10:53:28.761 WcastTTS: synth start index=14/65 textLen=146
+[WCAST_DEBUG] 2026-10-15 10:53:28.765 WcastTTS: synthesizeToFile index=14 result=0 renderMs=4 bytes=0
+[WCAST_DEBUG] 2026-10-15 10:53:32.085 WcastTTS: utterance ended index=11 readyIndices=2 synthInFlight=true synthIndex=14
+[WCAST_DEBUG] 2026-10-15 10:53:32.132 WcastTTS: play start index=12 gapMs=46 durationMs=2000 bytes=96044
+[WCAST_DEBUG] 2026-10-15 10:53:32.132 WcastVM: utteranceStarted sectionId=nomenclature paragraphIndex=6
+[WCAST_DEBUG] 2026-10-15 10:53:34.734 WcastTTS: utterance ended index=12 readyIndices=1 synthInFlight=true synthIndex=14
+[WCAST_DEBUG] 2026-10-15 10:53:34.778 WcastTTS: play start index=13 gapMs=44 durationMs=2160 bytes=103724
+[WCAST_DEBUG] 2026-10-15 10:53:34.778 WcastVM: utteranceStarted sectionId=nomenclature paragraphIndex=7
+[WCAST_DEBUG] 2026-10-15 10:53:37.531 WcastTTS: utterance ended index=13 readyIndices=0 synthInFlight=true synthIndex=14
+[WCAST_DEBUG] 2026-10-15 10:53:40.141 WcastTTS: synth done index=14 renderMs=11381 buffered=false readyIndices=0
+[WCAST_DEBUG] 2026-10-15 10:53:40.228 WcastTTS: play start index=14 gapMs=2697 durationMs=9840 bytes=472364
+[WCAST_DEBUG] 2026-10-15 10:53:40.235 WcastVM: utteranceStarted sectionId=nomenclature paragraphIndex=8
+[WCAST_DEBUG] 2026-10-15 10:53:40.237 WcastTTS: topUpLookAhead begin frontier=15 horizon=17 buffer=0
+[WCAST_DEBUG] 2026-10-15 10:53:40.238 WcastTTS: synth start index=15/65 textLen=181
+[WCAST_DEBUG] 2026-10-15 10:53:40.244 WcastTTS: synthesizeToFile index=15 result=0 renderMs=5 bytes=0
+[WCAST_DEBUG] 2026-10-15 10:53:50.803 WcastTTS: utterance ended index=14 readyIndices=0 synthInFlight=true synthIndex=15
+[WCAST_DEBUG] 2026-10-15 10:53:52.289 WcastTTS: synth done index=15 renderMs=12050 buffered=false readyIndices=0
+[WCAST_DEBUG] 2026-10-15 10:53:52.451 WcastTTS: play start index=15 gapMs=1645 durationMs=11200 bytes=537644
+[WCAST_DEBUG] 2026-10-15 10:53:52.454 WcastVM: utteranceStarted sectionId=nomenclature paragraphIndex=9
+[WCAST_DEBUG] 2026-10-15 10:53:52.459 WcastTTS: topUpLookAhead begin frontier=16 horizon=18 buffer=0
+[WCAST_DEBUG] 2026-10-15 10:53:52.461 WcastTTS: synth start index=16/65 textLen=57
+[WCAST_DEBUG] 2026-10-15 10:53:52.472 WcastTTS: synthesizeToFile index=16 result=0 renderMs=11 bytes=0
+[WCAST_DEBUG] 2026-10-15 10:53:57.522 WcastTTS: synth done index=16 renderMs=5061 buffered=true readyIndices=0
+[WCAST_DEBUG] 2026-10-15 10:53:57.524 WcastTTS: topUpLookAhead begin frontier=17 horizon=18 buffer=1
+[WCAST_DEBUG] 2026-10-15 10:53:57.526 WcastTTS: synth start index=17/65 textLen=412
+[WCAST_DEBUG] 2026-10-15 10:53:57.532 WcastTTS: synthesizeToFile index=17 result=0 renderMs=6 bytes=0
+[WCAST_DEBUG] 2026-10-15 10:54:04.287 WcastTTS: utterance ended index=15 readyIndices=1 synthInFlight=true synthIndex=17
+[WCAST_DEBUG] 2026-10-15 10:54:04.325 WcastTTS: play start index=16 gapMs=38 durationMs=4640 bytes=222764
+[WCAST_DEBUG] 2026-10-15 10:54:04.325 WcastVM: utteranceStarted sectionId=nomenclature paragraphIndex=10
+[WCAST_DEBUG] 2026-10-15 10:54:09.527 WcastTTS: utterance ended index=16 readyIndices=0 synthInFlight=true synthIndex=17
+[WCAST_DEBUG] 2026-10-15 10:54:24.108 WcastTTS: synth done index=17 renderMs=26583 buffered=false readyIndices=0
+[WCAST_DEBUG] 2026-10-15 10:54:24.149 WcastTTS: play start index=17 gapMs=14622 durationMs=24400 bytes=1171244
+[WCAST_DEBUG] 2026-10-15 10:54:24.149 WcastVM: utteranceStarted sectionId=nomenclature paragraphIndex=11
+[WCAST_DEBUG] 2026-10-15 10:54:24.150 WcastTTS: topUpLookAhead begin frontier=18 horizon=20 buffer=0
+[WCAST_DEBUG] 2026-10-15 10:54:24.150 WcastTTS: synth start index=18/65 textLen=11
+[WCAST_DEBUG] 2026-10-15 10:54:24.151 WcastTTS: synthesizeToFile index=18 result=0 renderMs=1 bytes=0
+[WCAST_DEBUG] 2026-10-15 10:54:26.008 WcastTTS: synth done index=18 renderMs=1858 buffered=true readyIndices=0
+[WCAST_DEBUG] 2026-10-15 10:54:26.008 WcastTTS: topUpLookAhead begin frontier=19 horizon=20 buffer=1
+[WCAST_DEBUG] 2026-10-15 10:54:26.009 WcastTTS: synth start index=19/65 textLen=602
+[WCAST_DEBUG] 2026-10-15 10:54:26.010 WcastTTS: synthesizeToFile index=19 result=0 renderMs=1 bytes=0
+[WCAST_DEBUG] 2026-10-15 10:54:49.072 WcastTTS: utterance ended index=17 readyIndices=1 synthInFlight=true synthIndex=19
+[WCAST_DEBUG] 2026-10-15 10:54:49.089 WcastTTS: play start index=18 gapMs=17 durationMs=1040 bytes=49964
+[WCAST_DEBUG] 2026-10-15 10:54:49.090 WcastVM: utteranceStarted sectionId=description paragraphIndex=null
+[WCAST_DEBUG] 2026-10-15 10:54:50.699 WcastTTS: utterance ended index=18 readyIndices=0 synthInFlight=true synthIndex=19
+[WCAST_DEBUG] 2026-10-15 10:55:16.813 WcastTTS: synth done index=19 renderMs=50805 buffered=false readyIndices=0
+[WCAST_DEBUG] 2026-10-15 10:55:16.891 WcastTTS: play start index=19 gapMs=26191 durationMs=41680 bytes=2000684
+[WCAST_DEBUG] 2026-10-15 10:55:16.900 WcastVM: utteranceStarted sectionId=description paragraphIndex=0
+[WCAST_DEBUG] 2026-10-15 10:55:16.907 WcastTTS: topUpLookAhead begin frontier=20 horizon=22 buffer=0
+[WCAST_DEBUG] 2026-10-15 10:55:16.909 WcastTTS: synth start index=20/65 textLen=320
+[WCAST_DEBUG] 2026-10-15 10:55:16.918 WcastTTS: synthesizeToFile index=20 result=0 renderMs=8 bytes=0
+[WCAST_DEBUG] 2026-10-15 10:55:19.954 WcastPlayer: handleSetPlayWhenReady playWhenReady=false status=PLAYING
+[WCAST_DEBUG] 2026-10-15 10:55:19.956 WcastTTS: pause player=true synthInFlight=true index=19
+[WCAST_DEBUG] 2026-10-15 10:55:19.957 WcastMedia: onPlaybackPaused
+[WCAST_DEBUG] 2026-10-15 10:55:19.957 WcastPlayer: onPaused prevStatus=PLAYING
+[WCAST_DEBUG] 2026-10-15 10:55:19.957 WcastPlayer: getState status=PAUSED title=Chicken
+[WCAST_DEBUG] 2026-10-15 10:55:19.964 WcastPlayer: getState status=PAUSED title=Chicken
+[WCAST_DEBUG] 2026-10-15 10:55:19.971 WcastMedia: onUpdateNotification foreground=false state=3 playWhenReady=false timeline=1
+[WCAST_DEBUG] 2026-10-15 10:55:19.972 WcastMedia: createNotification state=3 playWhenReady=false timeline=1 customLayout=0
+[WCAST_DEBUG] 2026-10-15 10:55:19.977 WcastMedia: createNotification -> notificationId=1001
+[WCAST_DEBUG] 2026-10-15 10:55:41.070 WcastTTS: synth done index=20 renderMs=24160 buffered=true readyIndices=0
+[WCAST_DEBUG] 2026-10-15 10:55:41.071 WcastTTS: topUpLookAhead begin frontier=21 horizon=22 buffer=1
+[WCAST_DEBUG] 2026-10-15 10:55:41.073 WcastTTS: synth start index=21/65 textLen=269
+[WCAST_DEBUG] 2026-10-15 10:55:41.078 WcastTTS: synthesizeToFile index=21 result=0 renderMs=4 bytes=0
+[WCAST_DEBUG] 2026-10-15 10:56:04.316 WcastTTS: synth done index=21 renderMs=23243 buffered=true readyIndices=1
+[WCAST_DEBUG] 2026-10-15 10:56:04.320 WcastTTS: topUpLookAhead begin frontier=22 horizon=22 buffer=2
+[WCAST_DEBUG] 2026-10-15 10:56:04.324 WcastTTS: synth start index=22/65 textLen=677
+[WCAST_DEBUG] 2026-10-15 10:56:04.331 WcastTTS: synthesizeToFile index=22 result=0 renderMs=7 bytes=0
+[WCAST_DEBUG] 2026-10-15 10:56:29.975 WcastMedia: onDestroy foregroundStarted=true
+[WCAST_DEBUG] 2026-10-15 10:56:29.982 WcastMedia: abandonFocus
+[WCAST_DEBUG] 2026-10-15 10:56:30.002 WcastMedia: onUpdateNotification foreground=false state=3 playWhenReady=false timeline=1
+[WCAST_DEBUG] 2026-10-15 10:56:30.017 WcastPlayer: getState status=PAUSED title=Chicken
+[WCAST_DEBUG] 2026-10-15 10:56:58.770 WcastTTS: synth done index=22 renderMs=54446 buffered=true readyIndices=2
+[WCAST_DEBUG] 2026-10-15 10:57:20.424 WcastTTS: resume paused=true index=19
+[WCAST_DEBUG] 2026-10-15 10:57:20.426 WcastTTS: resume re-announce index=19
+[WCAST_DEBUG] 2026-10-15 10:57:20.426 WcastVM: utteranceStarted sectionId=description paragraphIndex=0
+[WCAST_DEBUG] 2026-10-15 10:57:20.427 WcastVM: onPlaybackStarted title=Chicken serviceActive=false
+[WCAST_DEBUG] 2026-10-15 10:57:20.459 WcastMedia: onCreate
+[WCAST_DEBUG] 2026-10-15 10:57:20.461 WcastMedia: channel importance=2 notificationsEnabled=true
+[WCAST_DEBUG] 2026-10-15 10:57:20.461 WcastMedia: startForeground id=1001
+[WCAST_DEBUG] 2026-10-15 10:57:20.474 WcastPlayer: getState status=IDLE title=null
+[WCAST_DEBUG] 2026-10-15 10:57:20.491 WcastMedia: onCreate done: sessionAdded=true
+[WCAST_DEBUG] 2026-10-15 10:57:20.491 WcastMedia: onStartCommand action=cloud.morris.wcast.action.PLAY flags=0 startId=1
+[WCAST_DEBUG] 2026-10-15 10:57:20.492 WcastMedia: onPlaybackStarted title=Chicken
+[WCAST_DEBUG] 2026-10-15 10:57:20.493 WcastMedia: requestFocus granted=1 hasFocus=true
+[WCAST_DEBUG] 2026-10-15 10:57:20.493 WcastPlayer: onStarted newTitle=Chicken prevStatus=IDLE
+[WCAST_DEBUG] 2026-10-15 10:57:20.493 WcastPlayer: getState status=PLAYING title=Chicken
+[WCAST_DEBUG] 2026-10-15 10:57:20.512 WcastMedia: onUpdateNotification foreground=true state=3 playWhenReady=true timeline=1
+[WCAST_DEBUG] 2026-10-15 10:57:20.512 WcastMedia: createNotification state=3 playWhenReady=true timeline=1 customLayout=0
+[WCAST_DEBUG] 2026-10-15 10:57:20.516 WcastMedia: createNotification -> notificationId=1001
+[WCAST_DEBUG] 2026-10-15 10:57:20.595 WcastMedia: onStartCommand action=null flags=0 startId=2
+[WCAST_DEBUG] 2026-10-15 10:57:59.666 WcastTTS: utterance ended index=19 readyIndices=3 synthInFlight=false synthIndex=null
+[WCAST_DEBUG] 2026-10
