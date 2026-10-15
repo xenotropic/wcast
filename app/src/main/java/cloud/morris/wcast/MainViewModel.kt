@@ -289,19 +289,26 @@ class MainViewModel : AndroidViewModel {
     }
 
     /**
-     * Starts (or restarts) the foreground [WcastMediaService] and tells it and the
-     * [SpeechControllerBridge] that speech is now actively playing, so a single
+     * Starts the foreground [WcastMediaService] on the *first* play, or signals the
+     * already-running service on later plays, then tells the service and the
+     * [SpeechControllerBridge] that speech is actively playing so a single
      * media-button press will pause (and the next one resume).
      */
     private fun onPlaybackStarted(title: String?) {
-        // Start the service with the play command in the intent so that on the
-        // *first* play (when `active` is still null) the once-created service
-        // still applies focus + session state in onStartCommand. The direct
-        // call below is the synchronous fast path for later plays, which wins
-        // the race against the TTS engine grabbing its own duck focus.
-        WcastMediaService.startService(getApplication(), title)
+        // On the *first* play (`active` is still null) start the service with the
+        // play command in the intent, so the once-created service applies focus +
+        // session state in onStartCommand and its onCreate bootstrap takes the
+        // foreground. On later plays the service is already alive, so call it
+        // directly rather than issuing another startForegroundService(): a
+        // redundant startForegroundService() on a live service has no paired
+        // startForeground() and triggers ForegroundServiceDidNotStartInTimeException.
+        val svc = WcastMediaService.active
+        if (svc != null) {
+            svc.onPlaybackStarted(title)
+        } else {
+            WcastMediaService.startService(getApplication(), title)
+        }
         SpeechControllerBridge.updateState(active = true, playing = true)
-        WcastMediaService.active?.onPlaybackStarted(title)
     }
 
     /** Stops any ongoing speech and clears the speaking state. */
@@ -344,13 +351,13 @@ class MainViewModel : AndroidViewModel {
                 speechController.resume()
                 _speakingState.value = SpeakingState.WholeArticle
             }
-            else -> Unit
+            // Nothing to resume (e.g. a Bluetooth/media-button PLAY with no active
+            // article): stop here so we neither post a phantom "playing" card nor
+            // issue an unpaired startForegroundService() on the live service.
+            else -> return
         }
         // Re-acquire focus (it may have been abandoned) and mark as playing.
-        SpeechControllerBridge.updateState(active = true, playing = true)
-        val title = (_uiState.value as? UiState.Article)?.title
-        WcastMediaService.startService(getApplication(), title)
-        WcastMediaService.active?.onPlaybackStarted(title)
+        onPlaybackStarted((_uiState.value as? UiState.Article)?.title)
     }
 
     /** Toggles between paused and playing for the current stream. */

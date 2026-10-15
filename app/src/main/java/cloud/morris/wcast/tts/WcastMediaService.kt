@@ -1,11 +1,17 @@
 package cloud.morris.wcast.tts
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.os.Build
+import androidx.core.app.ServiceCompat
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -29,6 +35,13 @@ class WcastMediaService : MediaSessionService() {
             private set
 
         const val CHANNEL_ID = "wcast_playback"
+
+        /**
+         * Must match Media3's [DefaultMediaNotificationProvider.DEFAULT_NOTIFICATION_ID]
+         * so our bootstrap notification is replaced (not duplicated) once Media3's
+         * async notification path completes.
+         */
+        const val NOTIFICATION_ID = DefaultMediaNotificationProvider.DEFAULT_NOTIFICATION_ID
 
         private const val TAG = "WcastMedia"
 
@@ -73,12 +86,25 @@ class WcastMediaService : MediaSessionService() {
     private lateinit var player: TtsPlayer
     private lateinit var mediaSession: MediaSession
 
+    /** True once [startForegroundNow] has promoted the service to the foreground. */
+    private var foregroundStarted = false
+
+    /** Set in [onDestroy] to prevent any late foreground/notification work. */
+    private var destroyed = false
+
     // ── Service lifecycle ──────────────────────────────────────────────────────
 
     override fun onCreate() {
         super.onCreate()
         active = this
         DebugLog.d(TAG, "onCreate")
+
+        // Enter the foreground synchronously (before any async Media3 work): the
+        // startForegroundService() -> startForeground() deadline is measured from
+        // onCreate, and Media3's notification path completes only after an async
+        // controller connect, which can miss the deadline.
+        startForegroundNow()
+
         setMediaNotificationProvider(
             DefaultMediaNotificationProvider.Builder(this)
                 .setChannelId(CHANNEL_ID)
@@ -98,6 +124,44 @@ class WcastMediaService : MediaSessionService() {
         DebugLog.d(TAG, "onCreate done: sessionAdded=${isSessionAdded(mediaSession)}")
     }
 
+    /**
+     * Promotes the service to the foreground with a minimal, self-built notification
+     * so Android's foreground-service deadline is met even though Media3's own
+     * notification path is asynchronous. Reuses Media3's default notification id so
+     * [DefaultMediaNotificationProvider] overwrites this card (rather than stacking a
+     * second one) once playback state arrives.
+     */
+    private fun startForegroundNow() {
+        if (destroyed) return
+        createPlaybackChannel()
+        val notification = Notification.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(getString(R.string.app_name))
+            .setCategory(Notification.CATEGORY_TRANSPORT)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setContentIntent(appContentIntent())
+            .build()
+        DebugLog.d(TAG, "startForeground id=$NOTIFICATION_ID")
+        ServiceCompat.startForeground(
+            this,
+            NOTIFICATION_ID,
+            notification,
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+        )
+        foregroundStarted = true
+    }
+
+    private fun createPlaybackChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            getString(R.string.playback_channel_name),
+            NotificationManager.IMPORTANCE_LOW
+        )
+        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+            .createNotificationChannel(channel)
+    }
+
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession {
         DebugLog.d(TAG, "onGetSession caller=${controllerInfo.packageName}")
         return mediaSession
@@ -112,7 +176,8 @@ class WcastMediaService : MediaSessionService() {
     }
 
     override fun onDestroy() {
-        DebugLog.d(TAG, "onDestroy")
+        destroyed = true
+        DebugLog.d(TAG, "onDestroy foregroundStarted=$foregroundStarted")
         if (active === this) active = null
         abandonFocus()
         if (::mediaSession.isInitialized) mediaSession.release()
