@@ -205,6 +205,34 @@ class NormalizerTest {
     }
 
     @Test
+    fun `expands no abbreviation before numbers`() {
+        assertEquals("patent number 5,932,341", normalizer.normalize("patent no. 5,932,341"))
+        assertEquals("Patent number 4,567,890", normalizer.normalize("Patent No. 4,567,890"))
+        assertEquals("number 2 pencil", normalizer.normalize("No. 2 pencil"))
+    }
+
+    @Test
+    fun `leaves sentence-final no alone`() {
+        assertEquals("the answer is no.", normalizer.normalize("the answer is no."))
+    }
+
+    @Test
+    fun `pronounces covid as a word`() {
+        assertEquals("covid", normalizer.normalize("COVID"))
+        assertEquals("covid-19", normalizer.normalize("COVID-19"))
+    }
+
+    @Test
+    fun `expands data transfer rates`() {
+        assertEquals("40 gigabits per second", normalizer.normalize("40 Gbit/s"))
+        assertEquals("20 gigabits per second", normalizer.normalize("20 Gbps"))
+        assertEquals("10 gigabits per second", normalizer.normalize("10 gbps"))
+        assertEquals("480 megabits per second", normalizer.normalize("480 Mbit/s"))
+        assertEquals("500 megabytes per second", normalizer.normalize("500 MB/s"))
+        assertEquals("5 gigabytes per second", normalizer.normalize("5 GB/s"))
+    }
+
+    @Test
     fun `uses known acronym pronunciation`() {
         assertEquals("nayto", normalizer.normalize("NATO"))
         assertEquals("askey", normalizer.normalize("ASCII"))

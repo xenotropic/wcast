@@ -396,6 +396,20 @@ class Normalizer(private val rules: NormalizationRules) {
         put("Hz", "hertz")    // e.g. "25 Hz" -> "25 hertz" (frequency; unambiguous)
         put("kHz", "kilohertz")  // e.g. "25 kHz" -> "25 kilohertz" (guarded like "m")
         put("MHz", "megahertz")  // e.g. "25 MHz" -> "25 megahertz" (guarded like "m")
+        // Data-transfer rates (ticket 32): "Gbps"/"GB/s" etc. Case-insensitive
+        // like the rest of the map, so uppercase/lowercase variants ("gbps",
+        // "KB/s") all match. The bits-vs-bytes "b"/"B" case distinction is
+        // deliberately collapsed here — prose almost always writes bits as
+        // "Gbit/s"/"Gbps" and bytes as "GB/s".
+        put("Gbit/s", "gigabits per second")
+        put("Mbit/s", "megabits per second")
+        put("kbit/s", "kilobits per second")
+        put("Gbps", "gigabits per second")
+        put("Mbps", "megabits per second")
+        put("kbps", "kilobits per second")
+        put("GB/s", "gigabytes per second")
+        put("MB/s", "megabytes per second")
+        put("kB/s", "kilobytes per second")
         put("in", "inches")   // e.g. "25.2 in" -> "25.2 inches" (decimal-safe)
         put("m", "meters")    // e.g. "5 m" -> "5 meters"
         put("t", "tonnes")    // e.g. "190 t" -> "190 tonnes" (tonne; guarded like "m")

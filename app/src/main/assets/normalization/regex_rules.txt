@@ -57,4 +57,7 @@
 (?i)\bsq\.?\s*km\b\.?	square kilometers	
 (?i)\bsq\.?\s*ft\b\.?	square feet	
 
-
+# "No." / "no." immediately before a number is the "number" abbreviation
+# ("patent no. 5,932,341", "No. 2 pencil"); capturing the first digit leaves
+# a sentence-final "no." untouched.
+(?i)\bno\.\s*(\d)	number $1
