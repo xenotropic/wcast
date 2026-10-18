@@ -22,7 +22,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0" "platform-tools" \
     && chown -R vscode:vscode /opt/android-sdk
 
-# Cache git credentials in-memory for 8 hours so pushes don't re-prompt each
-# time. Run as the container's vscode user (the runtime user) so `--global`
-# lands in /home/vscode/.gitconfig instead of root's.
+# Cache git credentials in-memory for 8 hours so pushes don't re-prompt within
+# a session, but the fine-grained PAT is never written to disk and can't be
+# replayed after 8h (or a container rebuild). Run as the container's vscode
+# user (the runtime user) so `--global` lands in /home/vscode/.gitconfig. The
+# Dev Containers extension injects a host-keychain credential helper into
+# /etc/gitconfig at container start; GIT_CONFIG_NOSYSTEM=1 (set in
+# .devcontainer/devcontainer.json) disables it so git never falls back to the
+# indefinite host keychain.
 RUN su - vscode -c "git config --global credential.helper 'cache --timeout=28800'"
