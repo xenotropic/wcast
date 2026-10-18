@@ -674,6 +674,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
             player?.let { if (!it.isPlaying) it.start() }
             return
         }
+        paused = false
         val currentChunk = chunks.getOrNull(currentIndex)
         if (player != null) {
             try {
