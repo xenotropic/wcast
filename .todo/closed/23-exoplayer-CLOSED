@@ -1,3 +1,4 @@
+==CLOSED==
 ==Original Issue==
 This is sort of forking off from 21-pre-render per year request. I'm not especially concerned about 2-4 megabytes of bloat for exoplayer. That instruction was more about, like, adding on external binaries or things that are going to make it tens of megabytes bigger, which is not what exoplayer seems like. Especially if it sounds like this is something that would happen anyway and is more the like modern way to play media files. Setting aside pre-render for this ticket, can you just evaluate what it looks like to adopt Exoplayer now in terms of how the media card looks, how the current functionality of seeking and playing and tracking location works? What are the risks of breaking existing functionality if we just adopt ExoPlayer? 
 
@@ -627,3 +628,6 @@ Where to pick up on resume
 2. Then: cleanup Priority 1 (+ decide on Priority 2), rebuild `assembleDebug`,
    verify fresh BuildConfig + no stale imports, re-test once more.
 3. Then user decides whether to tag (v*) for a release build.
+
+==Status Report: 2026-10-17 17:50 PDT==
+Closed by user — done (user: "hallelujah, that was hard").

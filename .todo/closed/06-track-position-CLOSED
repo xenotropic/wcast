@@ -1,3 +1,4 @@
+==CLOSED==
 ==Original Issue==
 There currently is the line that goes on the left side of the screen with whatever's being read, and that works well. However, a lot of times you're listening, so you're not scrolling or doing anything with the phone. And under those circumstances, we would want the view to follow where that line is. We want the currently read paragraph to be always the top paragraph. But we also want the user to be able to scroll around if they want to. So the rule is that if the user taps the Find My Location button or if they press play some place, then the app goes into a sort of scrolling mode where it stays with where the currently read section is, keeping it, that paragraph, at the top of the screen. But if the user breaks that by scrolling, then it stops until they tap one of those buttons again. This is a little bit similar to how most mapping applications work in terms of keeping the user's location at the center of the view by default, but of course you can scroll other places if you want to, and then you can come back to it by pressing the My Location button
 
@@ -34,3 +35,6 @@ Notes / things to verify on-device:
 
 Verified: `./gradlew assembleDebug` compiles and `./gradlew testDebugUnitTest`
 passes.
+
+==Status Report: 2026-10-17 17:50 PDT==
+Closed by user — marked done.

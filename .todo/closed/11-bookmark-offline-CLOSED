@@ -1,3 +1,4 @@
+==CLOSED==
 ==Original Issue==
 I would like to make it possible to bookmark individual articles for two reasons. one is to find articles again that you want to go back to. The other is in order to make those bookmarked articles offline. So if you're using an offline model, all you need is just to store the text so you can listen on an airplane or other place where you won't have data. So I think the UI will be another icon that is within the search box. Right now we have the search icon at the right, then the X, and then just to the left of that, the next icon will be a hollow bookmark icon generally that's always present, and then if the user taps on it, the app will save the text offline and in future searches, the app will first check to see if it has an offline copy of anything and use that first. And then there has to be some way in order to see all of the bookmarked articles if you are on that airplane. I think you're going to have to have a menu. I had sort of been trying to avoid a menu, but I think at this point there are so many features it is becoming necessary. So where the settings icon currently is, let's make that a menu icon, move the settings into it, and then have there be another item there that is bookmarks. That opens up another activity that shows all of the bookmarked articles. Tapping on one takes you to it. If it is relatively easy, I think it would also be nice to include the current article position, like if you're listening to something that takes an hour to read, it would be nice to have that bookmarking process also cause it to store the current paragraph location so that if you press the play button after opening up that bookmarked article, you resume the last paragraph that you are at. Standard rules in the README-todo apply whether to plan or implement.
 
@@ -127,3 +128,6 @@ Verification: `./gradlew assembleDebug` and `testDebugUnitTest` both pass. Pleas
 exercise on-device: tap bookmark on an open article, listen a while, reopen from
 the Bookmarks menu, hit "Resume" vs "No", and try a reload — and confirm the
 offline copy reads without data.
+
+==Status Report: 2026-10-17 17:50 PDT==
+Closed by user — marked done.

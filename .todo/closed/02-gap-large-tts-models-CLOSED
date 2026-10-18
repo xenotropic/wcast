@@ -1,3 +1,4 @@
+==CLOSED==
 ==Original Issue==
 Larger TTS models (Whether cloud-based or local, "large" relative to the phone) tend to have a large delay at the beginning of each paragraph. Certainly for the first paragraph, this is unavoidable, but for subsequent paragraphs, in order to prevent that gap, I'm wondering is there any way that we can throw those paragraphs out to the TTS model or to the service sooner so that there is less of a gap?
 
@@ -323,4 +324,8 @@ engine-bound (per-paragraph model warm-up) and accepted for now; no further
 changes planned. Reopen if it warrants more attention later. Ticket 21 (full
 background pre-render) and the "merge adjacent short" consolidation remain
 possible follow-ups if reopened.
+
+==Status Report: 2026-10-17 17:50 PDT==
+Closed by user: fixed by ticket 30 (progressive sentence-first chunking) plus
+marmelade-tts improvements — we're basically doing that now.
 

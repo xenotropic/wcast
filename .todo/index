@@ -11,32 +11,32 @@ Next open ticket number: 33
 28 Units select (Cline Difficulty Rating: 5)
 27 lock-vertical (Cline Difficulty Rating: 3)
 26 battery-optimization (Cline Difficulty Rating: 5)
-25 todo-meta (Cline Difficulty Rating: 1)
-23 exoplayer (Cline Difficulty Rating: 9)
 22 covid (Cline Difficulty Rating: 1)
 21 prerender (Cline Difficulty Rating: 6)
 20 settings-ui-bug (Cline Difficulty Rating: 2)
 19 normalization-improvement-as-AI-process (Cline Difficulty Rating: 4)
 15 update-model-when-changed (Cline Difficulty Rating: 3)
 14 foreign-word-finding-IPA-lookup (Cline Difficulty Rating: 6)
-11 bookmark-offline (Cline Difficulty Rating: 6)
-6 track-position (Cline Difficulty Rating: 4)
-2 gap-large-tts-models (Cline Difficulty Rating: 6)
 
 ## Closed
 
+25 todo-meta
 24 debug-logs
+23 exoplayer
 18 inches-as-in
 17 meters-as-m
 16 sqmi
 15 paragraph-level-granularity
 13 playbar-size
 12 continuity-setting
+11 bookmark-offline
 10 license-popup
 9 media-button
 8 outline-at-top
 7 player-in-drawer
+6 track-position
 5 x-for-search-box
 4 remove-paren-pronunciations
 3 add-settings
+2 gap-large-tts-models
 1 years-pron

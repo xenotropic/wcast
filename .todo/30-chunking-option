@@ -179,3 +179,9 @@ Implemented:
 
 Validation: `compileDebugKotlin`, `testDebugUnitTest`, and `assembleDebug` all
 pass; the debug APK (0.7) was regenerated with a fresh build timestamp.
+
+==Status Report: 2026-10-17 17:52 PDT==
+Ramp adjusted per user feedback: the priming ladder now starts with two one-sentence
+chunks (1, 1, 2, 4, then the rest) to close the small gap after the first sentence.
+Rebuilt `assembleDebug` with a fresh build timestamp and handed the debug APK off
+for on-device testing.
