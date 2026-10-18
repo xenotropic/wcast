@@ -1,31 +1,32 @@
 # TODO index
 
-Next open ticket number: 33
+Next open ticket number: 34
 
 ## Open
 
-32 data-transfer-abbrev (Cline Difficulty Rating: 2)
+33 thumbnail (Cline Difficulty Rating: 3)
 31 at-init-play-bar-play-plays-all (Cline Difficulty Rating: 2)
-30 chunking-option (Cline Difficulty Rating: 4)
 29 playback bug (Cline Difficulty Rating: 7)
 28 Units select (Cline Difficulty Rating: 5)
 27 lock-vertical (Cline Difficulty Rating: 3)
 26 battery-optimization (Cline Difficulty Rating: 5)
-22 covid (Cline Difficulty Rating: 1)
 21 prerender (Cline Difficulty Rating: 6)
-20 settings-ui-bug (Cline Difficulty Rating: 2)
 19 normalization-improvement-as-AI-process (Cline Difficulty Rating: 4)
-15 update-model-when-changed (Cline Difficulty Rating: 3)
 14 foreign-word-finding-IPA-lookup (Cline Difficulty Rating: 6)
 
 ## Closed
 
+32 data-transfer-abbrev
+30 chunking-option
 25 todo-meta
 24 debug-logs
 23 exoplayer
+22 covid
+20 settings-ui-bug
 18 inches-as-in
 17 meters-as-m
 16 sqmi
+15b update-model-when-changed
 15 paragraph-level-granularity
 13 playbar-size
 12 continuity-setting

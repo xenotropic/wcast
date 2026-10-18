@@ -1,3 +1,4 @@
+==CLOSED==
 ==Original Issue==
 In settings there is a checkbox about whether you continue to the end and there's the slider for the UI and they seem to actually function in terms of doing what they're supposed to do to the UI but they themselves when you're moving them around don't seem to be able to update in the actual settings activity So it looks like you're doing nothing while you're in there but then when you go back out of the settings it turns out that they've gone into effect and then if you go back into the settings they're now displaying their correct values so there's some sort of state that they're not able to update their appearance
 
@@ -20,4 +21,7 @@ Files: `SettingsActivity.kt` only.
 
 Verified: `./gradlew assembleDebug` and `testDebugUnitTest` pass. Please
 confirm on-device that the checkbox and slider now update immediately while the
-Settings screen is open. 
+Settings screen is open.
+
+==Status Report: 2026-10-17 19:07 PDT==
+Closed by user — marked done.

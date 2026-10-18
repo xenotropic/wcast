@@ -1,0 +1,21 @@
+==CLOSED==
+==Original Issue==
+review usb-c wikipedias article as normalized and then add regex etc for gbps GB/s, etc to normalize
+
+==Status Report: 2026-10-17 19:07 PDT==
+IMPLEMENTED and CLOSED. Added data-transfer-rate units to the units stage
+(`Normalizer.UNIT_WORDS`), which already expands "5 km/h" / "80 mph" and guards
+each match with `(?<=\d)` so a bare "GB/s" is never touched:
+
+  Gbit/s, Mbit/s, kbit/s  ->  "...bits per second"
+  Gbps,   Mbps,   kbps    ->  "...bits per second"   (b = bit)
+  GB/s,   MB/s,   kB/s    ->  "...bytes per second"  (B = byte)
+
+so "40 Gbit/s", "20 Gbps", "480 Mbit/s", "500 MB/s", "5 GB/s" read as "40
+gigabits per second", "20 gigabits per second", etc. This covers the USB-C
+article's "Gbit/s"/"Gbps" transfer rates and its "MB/s"/"GB/s" storage figures.
+Matching is case-insensitive like the rest of the units map, so lowercase
+"gbps"/"KB/s" spellings also resolve; the bits-vs-bytes "b"/"B" case distinction
+is deliberately collapsed (rare in prose).
+
+Verified: `./gradlew testDebugUnitTest` passes (new cases in NormalizerTest).

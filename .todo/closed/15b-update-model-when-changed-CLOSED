@@ -1,3 +1,4 @@
+==CLOSED==
 ==Original Issue==
 It seems like if I change the TTS model within the system TTS settings, then this app does not pick up that change until I force close it by going to the system android view (swipe gesture from bottom) where you can see all of the apps and swiping up on this one so that it closes. And then if I open it up again after doing that, it will have the new model. But short of that, it just keeps using the same model. If this has to be done by active intervention by the user, that's fine. I guess probably check first if there's some sort of state change that listener that you can do to be updated if there's a new model, where it is more automatic. It also would be very obvious to do it if you're coming back from the settings activity as in the system TTS settings, if you've gone to that activity through this app settings and you're coming back into this app settings, you've probably changed the model or you'd want to check.  If no automatic change is possible, I would also be fine putting it in the settings like reload model button just below where you go to the settings of Android in this app's settings. If no automatic change or manual change is possible, then I guess just write up an analysis of why that's the case and if there's anything to be done here.
 
@@ -26,4 +27,7 @@ Files: `tts/SpeechController.kt` (engine is now `var` + reload methods),
 `ui/ArticleScreen.kt` (resume hook), `SettingsActivity.kt` (button + toast).
 
 Verified: `./gradlew assembleDebug` and `testDebugUnitTest` pass. On-device:
-switch engine in Android TTS settings → back → play; and tap "Reload voice". 
+switch engine in Android TTS settings → back → play; and tap "Reload voice".
+
+==Status Report: 2026-10-17 19:07 PDT==
+Closed by user — marked done. Renamed from "15-update-model-when-changed" to "15b-update-model-when-changed" to disambiguate it from the other, already-closed ticket 15 ("15-paragraph-level-granularity"). Note: having two tickets numbered "15" is fine and there is no intent to renumber/fix the duplicate.

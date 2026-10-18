@@ -1,0 +1,19 @@
+==CLOSED==
+==Original Issue==
+COVID is still being pronounced as a separated acronym, so I think that goes into the pronounced acronyms file. Do that or actually do whatever seems like it would resolve that best in within the design of the normalization architecture and then you can close this ticket seems simple enough. It should be done in one pass. 
+
+also second task here unrelated except simple replace "patent no. nnnn" to expand to "number" and where n may include 0-9 or punctuation 
+
+==Status Report: 2026-10-17 19:07 PDT==
+IMPLEMENTED and CLOSED (both parts, in one pass):
+
+1. COVID: added `COVID -> covid` to `pronounced_acronyms.csv` so the all-caps
+   token now reads "covid" instead of being letter-split to "C O V I D".
+   (Title-case "Covid" and lowercase "covid" were already read as a word.)
+
+2. "no." -> "number": added a regex rule to `regex_rules.txt`:
+   `(?i)\bno\.\s*(\d) -> "number $1"`. So "patent no. 5,932,341" reads
+   "patent number 5,932,341" and "No. 2 pencil" reads "number 2 pencil"; the
+   captured digit leaves a sentence-final "no." untouched.
+
+Verified: `./gradlew testDebugUnitTest` passes (new cases in NormalizerTest).

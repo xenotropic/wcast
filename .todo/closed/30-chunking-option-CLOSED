@@ -1,3 +1,4 @@
+==CLOSED==
 ==Original Issue==
 After some revisions, Marmalade TTS is now much faster, one of the things that it does within its internal player is to hand off 
 a first sentence to get started, and then start adding bigger chunks. This gets the listener hearing something while a next, potentially larger
@@ -185,3 +186,6 @@ Ramp adjusted per user feedback: the priming ladder now starts with two one-sent
 chunks (1, 1, 2, 4, then the rest) to close the small gap after the first sentence.
 Rebuilt `assembleDebug` with a fresh build timestamp and handed the debug APK off
 for on-device testing.
+
+==Status Report: 2026-10-17 19:07 PDT==
+Closed by user — marked done.
