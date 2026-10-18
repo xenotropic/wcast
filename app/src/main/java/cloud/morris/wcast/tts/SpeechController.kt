@@ -339,14 +339,14 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
     }
 
     /**
-     * Groups [sentences] into the priming ladder 1, 2, 4, then the rest: a
-     * 10-sentence paragraph becomes `s1`, `s2..s3`, `s4..s7`, `s8..s10`; a short
-     * paragraph collapses naturally (`s1`, or `s1` then `s2`).
+     * Groups [sentences] into the priming ladder 1, 1, 2, 4, then the rest: a
+     * 10-sentence paragraph becomes `s1`, `s2`, `s3..s4`, `s5..s8`, `s9..s10`; a
+     * short paragraph collapses naturally (`s1`, `s1..s2`, ...).
      */
     private fun sentenceGroups(sentences: List<String>): List<String> {
         val groups = mutableListOf<String>()
         var i = 0
-        for (size in intArrayOf(1, 2, 4)) {
+        for (size in intArrayOf(1, 1, 2, 4)) {
             if (i >= sentences.size) break
             val end = minOf(i + size, sentences.size)
             groups.add(sentences.subList(i, end).joinToString(" "))
