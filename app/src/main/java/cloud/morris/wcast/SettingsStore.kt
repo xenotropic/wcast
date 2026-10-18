@@ -52,11 +52,23 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_DEBUG_LOGS_ENABLED, false)
         set(value) = prefs.edit().putBoolean(KEY_DEBUG_LOGS_ENABLED, value).apply()
 
+    /**
+     * When true (default), a freshly-started stream speaks its first sentence as
+     * soon as it's rendered, then progressively larger chunks until the look-ahead
+     * buffer is primed, after which whole paragraphs are used (ticket 30). When
+     * false, playback falls back to one whole paragraph per synthesis — the
+     * pre-chunking behavior.
+     */
+    var progressiveChunking: Boolean
+        get() = prefs.getBoolean(KEY_PROGRESSIVE_CHUNKING, true)
+        set(value) = prefs.edit().putBoolean(KEY_PROGRESSIVE_CHUNKING, value).apply()
+
     private companion object {
         const val PREFS_NAME = "wcast_settings"
         const val KEY_CONTINUITY = "continuity"
         const val KEY_PLAYER_BAR_SCALE = "player_bar_scale"
         const val KEY_EULA_ACCEPTED = "eula_accepted"
         const val KEY_DEBUG_LOGS_ENABLED = "debug_logs_enabled"
+        const val KEY_PROGRESSIVE_CHUNKING = "progressive_chunking"
     }
 }

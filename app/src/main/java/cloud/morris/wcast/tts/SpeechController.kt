@@ -10,6 +10,7 @@ import android.speech.tts.UtteranceProgressListener
 import android.os.SystemClock
 import android.util.Log
 import cloud.morris.wcast.DebugLog
+import cloud.morris.wcast.SettingsStore
 import cloud.morris.wcast.data.ArticleSection
 import cloud.morris.wcast.normalization.Normalizer
 import cloud.morris.wcast.normalization.loadNormalizationRules
@@ -32,6 +33,23 @@ data class Utterance(
     val sectionId: String?,
     val paragraphIndex: Int?,
     val text: String
+)
+
+/**
+ * A single synthesis/playback unit (ticket 30). One queue entry may produce
+ * several chunks during the cold-start priming ramp; in steady state a chunk
+ * corresponds one-to-one with an [Utterance].
+ *
+ * @property utteranceIndex Index into the paragraph-level queue this chunk
+ *   belongs to, so tracking (blue line, bookmarks) stays paragraph-level.
+ * @property text The normalized text to synthesize, already split.
+ * @property isFirstOfParagraph True for the first chunk of its owning queue
+ *   entry, so [onUtteranceStarted] fires once per entry.
+ */
+private data class Chunk(
+    val utteranceIndex: Int,
+    val text: String,
+    val isFirstOfParagraph: Boolean
 )
 
 /**
@@ -78,6 +96,9 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         Normalizer(loadNormalizationRules(appContext))
     }
 
+    /** Read at queue-build time so a Settings toggle takes effect on the next play. */
+    private val settings: SettingsStore = SettingsStore(appContext)
+
     /**
      * Invoked exactly once when the last utterance of a spoken stream finishes
      * (or errors out). Lets the caller clear any "now speaking" state.
@@ -97,9 +118,13 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
     private var queue: List<Utterance> = emptyList()
 
     /**
-     * Index into [queue] of the utterance currently being rendered/spoken.
-     * Advances past each utterance as it finishes.
+     * Synthesis/playback chunks derived from [queue] (ticket 30). The play head,
+     * look-ahead, and synthesis index into THIS list; tracking (blue line, skip,
+     * bookmarks) still indexes into [queue] via [Chunk.utteranceIndex].
      */
+    private var chunks: List<Chunk> = emptyList()
+
+    /** Index into [chunks] of the chunk currently being rendered/spoken. */
     private var currentIndex = 0
 
     /**
@@ -122,7 +147,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
     /** True while a [TextToSpeech.synthesizeToFile] request is outstanding. */
     private var synthInFlight = false
 
-    /** The queue index whose synthesis is in flight, valid only when [synthInFlight]. */
+    /** The chunk index whose synthesis is in flight, valid only when [synthInFlight]. */
     private var synthIndex: Int? = null
 
     /**
@@ -130,7 +155,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
      * playing because an earlier chunk is still audible, kept in ascending index
      * order (a FIFO of the play head). This is what removes the per-paragraph
      * synthesis gap: several chunks are rendered while the current one plays,
-     * instead of only one (ticket 02). Bounded by [LOOK_AHEAD] via
+     * instead of only one (ticket 02). Bounded by [LOOK_AHEAD_CHUNKS] via
      * [topUpLookAhead].
      */
     private val readyIndices = ArrayDeque<Int>()
@@ -245,10 +270,11 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
     private fun startQueue(utterances: List<Utterance>) {
         resetPlayback()
         queue = utterances
+        chunks = buildChunks(utterances)
         currentIndex = 0
-        Log.d(TAG, "startQueue utterances=${utterances.size}")
+        Log.d(TAG, "startQueue utterances=${utterances.size} chunks=${chunks.size}")
         lastUtteranceEndedAtMs = SystemClock.elapsedRealtime()
-        DebugLog.d(TAG, "stream start utterances=${utterances.size}")
+        DebugLog.d(TAG, "stream start utterances=${utterances.size} chunks=${chunks.size} progressive=${settings.progressiveChunking}")
         if (utterances.isEmpty()) {
             onStreamDone?.invoke()
             return
@@ -256,15 +282,116 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         beginSynthesis(0)
     }
 
-    /** (Re-)renders [queue] starting at [fromIndex] (inclusive). */
+    /**
+     * (Re-)renders [queue] starting at utterance [fromIndex] (inclusive), rebuilding
+     * the chunk list so the new start's first paragraph begins with a single
+     * sentence (ticket 30: a new start in a new place starts sentence-by-sentence).
+     */
     private fun enqueueFrom(fromIndex: Int) {
         resetPlayback()
-        currentIndex = fromIndex
-        beginSynthesis(fromIndex)
+        chunks = buildChunks(queue, fromIndex)
+        currentIndex = chunks.indexOfFirst { it.utteranceIndex == fromIndex }.coerceAtLeast(0)
+        beginSynthesis(currentIndex)
+    }
+
+    // ── Progressive sentence-first chunking (ticket 30) ───────────────────────
+
+    /**
+     * Derives synthesis/playback chunks from the paragraph-level [queue]. Without
+     * chunking enabled, one chunk per entry — today's behavior. With it enabled,
+     * the first [PRIME_PARAGRAPHS] paragraphs from a (re)start are split into a
+     * sentence ladder so first audio is a single sentence while ever-larger chunks
+     * render behind it; titles/headings stay their own single chunk and everything
+     * after the prime window graduates to whole paragraphs (steady state).
+     */
+    private fun buildChunks(utterances: List<Utterance>, fromUtteranceIndex: Int = 0): List<Chunk> {
+        val progressive = settings.progressiveChunking
+        val maxLen = TextToSpeech.getMaxSpeechInputLength().coerceAtLeast(1)
+        val chunks = mutableListOf<Chunk>()
+        var rampedParagraphs = 0
+        for ((i, utterance) in utterances.withIndex()) {
+            val isParagraph = utterance.paragraphIndex != null
+            val rampThis = progressive && isParagraph &&
+                i >= fromUtteranceIndex && rampedParagraphs < PRIME_PARAGRAPHS
+            val rawGroups = if (rampThis) {
+                sentenceGroups(splitIntoSentences(utterance.text))
+            } else {
+                listOf(utterance.text)
+            }
+            if (rampThis) rampedParagraphs++
+            val groups = if (progressive) rawGroups.flatMap { splitToFit(it, maxLen) } else rawGroups
+            groups.forEachIndexed { j, text ->
+                chunks.add(Chunk(i, text, isFirstOfParagraph = j == 0))
+            }
+        }
+        return chunks
+    }
+
+    /** Splits [text] into sentences, keeping each sentence's trailing punctuation. */
+    private fun splitIntoSentences(text: String): List<String> {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return emptyList()
+        val sentences = SENTENCE.findAll(trimmed)
+            .map { it.value.trim() }
+            .filter { it.isNotEmpty() }
+            .toList()
+        return sentences.ifEmpty { listOf(trimmed) }
     }
 
     /**
-     * Renders utterance [index] to a WAV file; playback begins in [onSynthDone].
+     * Groups [sentences] into the priming ladder 1, 2, 4, then the rest: a
+     * 10-sentence paragraph becomes `s1`, `s2..s3`, `s4..s7`, `s8..s10`; a short
+     * paragraph collapses naturally (`s1`, or `s1` then `s2`).
+     */
+    private fun sentenceGroups(sentences: List<String>): List<String> {
+        val groups = mutableListOf<String>()
+        var i = 0
+        for (size in intArrayOf(1, 2, 4)) {
+            if (i >= sentences.size) break
+            val end = minOf(i + size, sentences.size)
+            groups.add(sentences.subList(i, end).joinToString(" "))
+            i = end
+        }
+        if (i < sentences.size) {
+            groups.add(sentences.subList(i, sentences.size).joinToString(" "))
+        }
+        return groups
+    }
+
+    /**
+     * Enforces the engine's per-synthesis length limit
+     * (TextToSpeech.getMaxSpeechInputLength()) by splitting [text] on sentence
+     * boundaries, hard-splitting only a single sentence that is itself over-long.
+     */
+    private fun splitToFit(text: String, maxLen: Int): List<String> {
+        if (text.length <= maxLen) return listOf(text)
+        val sentences = splitIntoSentences(text).ifEmpty { listOf(text) }
+        val pieces = mutableListOf<String>()
+        val current = StringBuilder()
+        for (sentence in sentences) {
+            if (sentence.length > maxLen) {
+                if (current.isNotEmpty()) { pieces.add(current.toString()); current.clear() }
+                var k = 0
+                while (k < sentence.length) {
+                    val end = minOf(k + maxLen, sentence.length)
+                    pieces.add(sentence.substring(k, end).trim())
+                    k = end
+                }
+            } else if (current.isNotEmpty() && current.length + 1 + sentence.length > maxLen) {
+                pieces.add(current.toString())
+                current.setLength(0)
+                current.append(sentence)
+            } else {
+                if (current.isNotEmpty()) current.append(' ')
+                current.append(sentence)
+            }
+        }
+        if (current.isNotEmpty()) pieces.add(current.toString())
+        return pieces.ifEmpty { listOf(text) }
+    }
+
+    /**
+     * Renders chunk [index] to a WAV file; playback begins in [onSynthDone].
      *
      * Does NOT touch [currentIndex]: the play head is the caller's
      * responsibility ([startQueue], [enqueueFrom], [advanceAfterUtterance]). This
@@ -272,12 +399,12 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
      * play head (ticket 02).
      */
     private fun beginSynthesis(index: Int) {
-        if (index !in queue.indices) {
+        if (index !in chunks.indices) {
             finishStream()
             return
         }
         val gen = generation
-        val utterance = queue[index]
+        val chunk = chunks[index]
         val utteranceId = "tts-$gen-$index-${System.currentTimeMillis()}-${System.nanoTime()}"
         val params = Bundle().apply {
             putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
@@ -285,10 +412,10 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         val file = outputFile(gen, index)
         synthInFlight = true
         synthIndex = index
-        Log.d(TAG, "beginSynthesis index=$index/${queue.size} textLen=${utterance.text.length} file=${file.name}")
+        Log.d(TAG, "beginSynthesis index=$index/${chunks.size} textLen=${chunk.text.length} file=${file.name}")
         synthStartedAtMs = SystemClock.elapsedRealtime()
-        DebugLog.d(TAG, "synth start index=$index/${queue.size} textLen=${utterance.text.length}")
-        val result = engine.synthesizeToFile(utterance.text, params, file, utteranceId)
+        DebugLog.d(TAG, "synth start index=$index/${chunks.size} textLen=${chunk.text.length}")
+        val result = engine.synthesizeToFile(chunk.text, params, file, utteranceId)
         Log.d(TAG, "synthesizeToFile index=$index result=$result exists=${file.exists()} size=${file.length()}")
         DebugLog.d(TAG, "synthesizeToFile index=$index result=$result renderMs=${SystemClock.elapsedRealtime() - synthStartedAtMs} bytes=${file.length()}")
         if (result != TextToSpeech.SUCCESS) {
@@ -335,7 +462,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         // current chunk finishes (advanceAfterUtterance's fallback branch).
     }
 
-    /** Plays the previously rendered WAV for utterance [index] from our own process. */
+    /** Plays the previously rendered WAV for chunk [index] from our own process. */
     private fun playFile(gen: Int, index: Int) {
         if (gen != generation) return
         releasePlayer()
@@ -372,7 +499,10 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
             mp.start()
             Log.d(TAG, "playFile started index=$index duration=${mp.duration}ms")
             DebugLog.d(TAG, "play start index=$index gapMs=${SystemClock.elapsedRealtime() - lastUtteranceEndedAtMs} durationMs=${mp.duration} bytes=${file.length()}")
-            onUtteranceStarted?.invoke(index, queue[index])
+            val chunk = chunks[index]
+            if (chunk.isFirstOfParagraph) {
+                onUtteranceStarted?.invoke(chunk.utteranceIndex, queue[chunk.utteranceIndex])
+            }
         } catch (e: Exception) {
             // Missing/corrupt WAV or a prepare/start failure. Release and treat the
             // utterance as unrecoverable so reading is never stuck on one chunk.
@@ -404,7 +534,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
      */
     private fun topUpLookAhead() {
         if (synthInFlight) return
-        val horizon = minOf(currentIndex + LOOK_AHEAD, queue.size - 1)
+        val horizon = minOf(currentIndex + LOOK_AHEAD_CHUNKS, chunks.size - 1)
         val highest = maxOf(currentIndex, readyIndices.lastOrNull() ?: -1)
         val frontier = highest + 1
         if (frontier > horizon) return
@@ -416,15 +546,15 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
 
     private fun onFileError(gen: Int, index: Int) = advanceAfterUtterance(gen, index)
 
-    /** Moves the stream past utterance [index], or finishes the stream at the end. */
+    /** Moves the stream past chunk [index], or finishes the stream at the end. */
     private fun advanceAfterUtterance(gen: Int, index: Int) {
         if (gen != generation) return
         releasePlayer()
         lastUtteranceEndedAtMs = SystemClock.elapsedRealtime()
         DebugLog.d(TAG, "utterance ended index=$index readyIndices=${readyIndices.size} synthInFlight=$synthInFlight synthIndex=$synthIndex")
         currentIndex = maxOf(currentIndex, index + 1)
-        if (currentIndex >= queue.size) {
-            Log.d(TAG, "stream finished after index=$index (${queue.size} utterances)")
+        if (currentIndex >= chunks.size) {
+            Log.d(TAG, "stream finished after index=$index (${chunks.size} chunks)")
             finishStream()
         } else if (readyIndices.isNotEmpty() && readyIndices.first() == currentIndex) {
             // The look-ahead pre-render for this chunk already finished (ticket 02);
@@ -462,6 +592,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         Log.d(TAG, "finishStream")
         teardownAudio()
         queue = emptyList()
+        chunks = emptyList()
         currentIndex = 0
         paused = false
         onStreamDone?.invoke()
@@ -543,22 +674,22 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
             player?.let { if (!it.isPlaying) it.start() }
             return
         }
-        paused = false
+        val currentChunk = chunks.getOrNull(currentIndex)
         if (player != null) {
             try {
                 player?.start()
-                // Resuming the same rendered chunk: re-announce it so the UI
-                // restores the active-position / left-margin highlight that
-                // pause() cleared.
-                if (currentIndex in queue.indices) {
-                    DebugLog.d(TAG, "resume re-announce index=$currentIndex")
-                    onUtteranceStarted?.invoke(currentIndex, queue[currentIndex])
+                // Resuming the same rendered chunk: re-announce its owning
+                // paragraph so the UI restores the active-position / left-margin
+                // highlight that pause() cleared.
+                if (currentChunk != null) {
+                    DebugLog.d(TAG, "resume re-announce chunk=$currentIndex utterance=${currentChunk.utteranceIndex}")
+                    onUtteranceStarted?.invoke(currentChunk.utteranceIndex, queue[currentChunk.utteranceIndex])
                 }
             } catch (_: Exception) {
-                enqueueFrom(currentIndex)
+                currentChunk?.let { enqueueFrom(it.utteranceIndex) }
             }
         } else {
-            enqueueFrom(currentIndex)
+            currentChunk?.let { enqueueFrom(it.utteranceIndex) }
         }
     }
 
@@ -581,7 +712,8 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
             }
         }
 
-        val currentSectionPos = sectionStartIndices.indexOfLast { it <= currentIndex }
+        val currentUtteranceIndex = chunks.getOrNull(currentIndex)?.utteranceIndex ?: return
+        val currentSectionPos = sectionStartIndices.indexOfLast { it <= currentUtteranceIndex }
             .coerceAtLeast(0)
         val targetPos = currentSectionPos + delta
         if (targetPos !in sectionStartIndices.indices) return
@@ -596,6 +728,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         resetPlayback()
         if (queue.isNotEmpty()) {
             queue = emptyList()
+            chunks = emptyList()
             currentIndex = 0
             paused = false
             onStreamDone?.invoke()
@@ -659,6 +792,16 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         private val TITLE_KEY = Any()
 
         /** Number of finished chunks to keep buffered ahead of the play head (ticket 02). */
-        private const val LOOK_AHEAD = 3
+        private const val LOOK_AHEAD_CHUNKS = 8
+
+        /**
+         * Roughly how many paragraphs from a fresh (re)start use the sentence
+         * ladder before graduating to whole paragraphs. Approximates "ramp until
+         * the look-ahead buffer is primed" (ticket 30, ramp scope 2b).
+         */
+        private const val PRIME_PARAGRAPHS = 3
+
+        /** Sentence enders for the chunking splitter (`.` / `!` / `?`, incl. repeats). */
+        private val SENTENCE = Regex("""[^.!?]+[.!?]*""")
     }
 }

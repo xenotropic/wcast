@@ -81,6 +81,8 @@ class SettingsActivity : ComponentActivity() {
                         onContinuityChange = { settings.continuity = it },
                         initialPlayerBarScale = settings.playerBarScale,
                         onPlayerBarScaleChange = { settings.playerBarScale = it },
+                        initialProgressiveChunking = settings.progressiveChunking,
+                        onProgressiveChunkingChange = { settings.progressiveChunking = it },
                         initialDebugLogsEnabled = settings.debugLogsEnabled,
                         onDebugLogsEnabledChange = { enabled ->
                             settings.debugLogsEnabled = enabled
@@ -149,6 +151,8 @@ private fun SettingsScreen(
     onContinuityChange: (Boolean) -> Unit,
     initialPlayerBarScale: Int,
     onPlayerBarScaleChange: (Int) -> Unit,
+    initialProgressiveChunking: Boolean,
+    onProgressiveChunkingChange: (Boolean) -> Unit,
     initialDebugLogsEnabled: Boolean,
     onDebugLogsEnabledChange: (Boolean) -> Unit,
     onBack: () -> Unit,
@@ -158,6 +162,7 @@ private fun SettingsScreen(
 ) {
     var continuity by remember { mutableStateOf(initialContinuity) }
     var playerBarScale by remember { mutableStateOf(initialPlayerBarScale) }
+    var progressiveChunking by remember { mutableStateOf(initialProgressiveChunking) }
     var debugLogsEnabled by remember { mutableStateOf(initialDebugLogsEnabled) }
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
@@ -223,6 +228,15 @@ private fun SettingsScreen(
                 onCheckedChange = { newValue ->
                     continuity = newValue
                     onContinuityChange(newValue)
+                }
+            )
+            SettingsToggleRow(
+                title = "Sentence-by-sentence start",
+                subtitle = "Speak the first sentence right away, then ramp up to whole paragraphs once playback is underway.",
+                checked = progressiveChunking,
+                onCheckedChange = { newValue ->
+                    progressiveChunking = newValue
+                    onProgressiveChunkingChange(newValue)
                 }
             )
             SettingsSliderRow(
