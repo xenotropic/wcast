@@ -1,1 +1,14 @@
-Create a index of issues sorted from highest number to lowest number with the open ones at the top and the closed ones in a second section below. So two sections, each sorted from highest number to lowest number. Make it current, add instructions to agents.md to keep that up to date. Also add a line to the top with what the next open ticket number would be. The original prompting thing here was that I have to go searching in order to figure out what the highest number is in order to create a new issue. This index I'm asking you to create will be in the .todo directory and called index. 
+==Original Issue==
+Create a index of issues sorted from highest number to lowest number with the open ones at the top and the closed ones in a second section below. So two sections, each sorted from highest number to lowest number. Make it current, add instructions to agents.md to keep that up to date. Also add a line to the top with what the next open ticket number would be. The original prompting thing here was that I have to go searching in order to figure out what the highest number is in order to create a new issue. This index I'm asking you to create will be in the .todo directory and called index. Please also add a parenthetical to the end of line for open tickets that looks like (Cline Difficult Rating: X) where X is a number 0-9. Then go ahead and without going deeply into architecture of any of them just take a quick guess about how difficult each ticket is. 0 is 100% confidence, 9 is like "wow that sounds hard I couldn't even tell you how hard that is without doing a deep architectural dive". Leave instructions along this line in Agents.md to update the index along these lines when asked. 
+==Status Report: 2026-10-17 17:25 PDT==
+Done. Created `.todo/index` with the requested shape: a "Next open ticket number"
+line up top (33), an open section and a closed section each sorted highest to
+lowest, and a `(Cline Difficulty Rating: X)` on every open-ticket line. The
+ratings are quick guesses only — `0` = trivial / 100% confidence, `9` = "can't
+even guess how hard without a deep architectural dive" (exoplayer got a 9, covid
+and this ticket a 1, etc.). Also added a "Todo index (.todo/index)" section to
+AGENTS.md telling agents to keep the index current whenever they create, resolve,
+or close a ticket.
+
+Left this ticket open (not moved to closed/) so you can review the index and the
+ratings before closing it out.

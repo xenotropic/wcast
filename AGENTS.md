@@ -34,6 +34,23 @@ this project is versioned, built, and committed.
    is tracked and should be kept in sync (pull at start of job / push   at end) 
    on each turn by agents unless something else instructs you not to. 
 
+## Todo index (.todo/index)
+
+The file `.todo/index` is a quick-reference listing of every ticket in this
+repo and must be kept current. Agents update it whenever they create, resolve,
+or close a ticket. Format:
+
+- Two sections — `## Open` (top) and `## Closed` (bottom) — each sorted by
+  ticket number, highest first.
+- The first line states the **next open ticket number** (highest number in
+  use + 1) so a new ticket can be created without hunting for the max.
+- Every open-ticket line ends with `(Cline Difficulty Rating: X)`, a quick
+  0–9 guess at difficulty: `0` = trivial / 100% confidence, `9` = "can't even
+  guess how hard without a deep architectural dive". Closed tickets need no
+  rating.
+- A ticket's slug is its filename minus the leading `N-` and any trailing
+  `-CLOSED`.
+
 ## Building & validating changes locally (IMPORTANT)
 
 - **Always produce a fresh debug APK after code changes.** Compiling
