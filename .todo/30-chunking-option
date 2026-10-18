@@ -1,3 +1,4 @@
+==Original Issue==
 After some revisions, Marmalade TTS is now much faster, one of the things that it does within its internal player is to hand off 
 a first sentence to get started, and then start adding bigger chunks. This gets the listener hearing something while a next, potentially larger
 chunk gets generated. Please review and architect what this would look like. Just plan mode only right now. 
@@ -5,3 +6,148 @@ Bear in mind that this applies both when you're starting the very first time, bu
 I'm fine with the blue line staying the way it is (paragraph by paragraph). Seems conceivable you might have to
 Update some of the logic to ensure that that's still happening on a paragraph-by-paragraph basis if you start throwing things onto the queue on a sentence basis. 
 Also, plan around what happens if there's very short paragraph and then very long paragraph. It could be that you want to increase the chunk sizes where you throw one sentence on the queue, then two sentences on the queue, and then start throwing the rest of that paragraph and then whole paragraphs. 
+==Status Report: 2026-10-17 17:01 PDT== (PLAN ONLY — no code changed)
+
+The short version: Marmalade buys "first audio fast" by handing the engine a
+single sentence, then ever-larger chunks. Our equivalent is the same idea
+applied to the `synthesizeToFile` pipeline: at any fresh start, render + play
+just one sentence, then feed bigger chunks behind it. The key architectural
+move is to *decouple "chunk" (what we synthesize) from "paragraph" (what we
+track/highlight)*, because today they are the same thing.
+
+How the current pipeline works (the thing we're changing)
+----------------------------------------------------------
+- `SpeechController.queue` is one `Utterance(sectionId, paragraphIndex, text)`
+  per title / heading / paragraph, and that one object is both the *playback
+  unit* (one WAV via `synthesizeToFile`) and the *tracking unit* (drives the
+  blue line).
+- `startQueue()` -> `beginSynthesis(0)` renders the WHOLE first paragraph
+  before any audio is audible; first sound only lands in `onSynthDone` ->
+  `playFile`.
+- Look-ahead (`topUpLookAhead`, `LOOK_AHEAD = 3`) pre-renders whole paragraphs
+  while one plays, so later paragraph boundaries have no synthesis gap
+  (ticket 02).
+- `currentIndex` advances only when a chunk becomes audible; `onUtteranceStarted`
+  -> `MainViewModel` -> `ActivePosition(sectionId, paragraphIndex)` drives the
+  blue line, jump-to-current-position, and bookmark persistence.
+
+Proposed architecture
+---------------------
+1. Keep `queue` as the tracking list; add a derived chunk list.
+   - `queue: List<Utterance>` stays exactly as today (one entry per
+     title/heading/paragraph). It remains the single source of truth for the
+     blue line, `skipSections`, `speakFromParagraph`, bookmarks, and
+     stream-done.
+   - Add `chunks: List<Chunk>`:
+       data class Chunk(
+           val utteranceIndex: Int,   // which queue entry (paragraph) this is part of
+           val text: String,          // normalized text to synthesize (already split)
+           val isFirstOfParagraph: Boolean
+       )
+     Built deterministically, from normalized text, at the moment `queue` is
+     built inside `start()`. The play head, look-ahead, and synthesis now index
+     into `chunks`; tracking still indexes into `queue`.
+
+2. Chunking policy (the ramp ladder).
+   - Sentence-split each paragraph with a conservative splitter (`. ! ? ...`
+     followed by whitespace/end, keeping the punctuation with its sentence;
+     see Risks for abbreviation/decimal caveats).
+   - During the warm-up/prime phase, a paragraph's sentences are grouped
+     1, 2, 4, ... with the final group absorbing the rest of the paragraph
+     (`isFirstOfParagraph = true` only for group 1):
+       * 10-sentence paragraph -> [s1], [s2..s3], [s4..s7], [s8..s10]
+       * 2-sentence paragraph  -> [s1], [s2]
+       * 1-sentence paragraph  -> [s1]   (ramp collapses)
+   - After priming, whole paragraphs are emitted as single chunks — the same
+     steady state as today, so slow engines don't pay extra `synthesizeToFile`
+     calls forever (ticket 02's whole point).
+   - Hard ceiling: never emit a chunk longer than `engine.maxSpeechInputLength`;
+     if one is, split that chunk further.
+
+3. Cold-start priming (the actual latency win).
+   - Today `startQueue()` renders the whole first paragraph, then tops up.
+     The new `startQueue()` / `enqueueFrom()` renders ONLY the first chunk
+     (a single sentence) and then calls `topUpLookAhead()`. Result: first audio
+     = one sentence's render time instead of a whole paragraph's.
+   - `topUpLookAhead()` fills the buffer behind the play head while sentence 1
+     is audible — exactly Marmalade's "hear something while the next, larger
+     chunk generates."
+   - The horizon is re-expressed in chunk units (sentence chunks are smaller),
+     e.g. `LOOK_AHEAD_CHUNKS = 8`. Optional refinement: cap the buffer by
+     *estimated audio seconds* using each chunk's WAV duration rather than a
+     fixed count; recommend starting with the fixed count and measuring.
+
+4. When the ramp ends (the short-then-long case).
+   - (a) Simple: ramp only the FIRST paragraph of each start, then whole
+     paragraphs. Problem: a "short then long" stream only wins on paragraph 1.
+   - (b) RECOMMENDED: keep ramping paragraph-by-paragraph UNTIL the look-ahead
+     buffer is primed (play head audible AND `readyIndices` full), then
+     graduate to whole paragraphs. This directly answers the issue's
+     short-then-long concern: a 1-sentence first paragraph primes instantly, and
+     a following very-long paragraph still begins with a small [s1] chunk
+     instead of a full-paragraph stall — because the buffer wasn't primed yet.
+     No steady-state call-count penalty, either.
+
+5. Keeping the blue line paragraph-level (explicit requirement).
+   - `onUtteranceStarted` (the only callback `MainViewModel` consumes) fires
+     only when the play head enters a NEW `queue` entry — i.e. only for
+     `Chunk.isFirstOfParagraph` (or a lone-chunk paragraph). Sub-chunks of the
+     same paragraph do not re-fire it.
+   - Net effect: `MainViewModel`, `ActivePosition`, highlight, scroll, and
+     bookmark-persist are completely unchanged; the blue line still moves
+     paragraph-by-paragraph even though priming plays sentence-by-sentence.
+   - `resume()`'s existing re-announce re-fires for the owning paragraph
+     (behavior unchanged).
+
+6. Seek / skip / resume-to-new-place.
+   - `enqueueFrom(fromParagraphIndex)` recomputes the chunk list starting at
+     that paragraph and begins with that paragraph's first sentence — satisfying
+     "any new start in a new place starts with a single sentence."
+   - `skipSections` / `skipRelative` jump via `enqueueFrom(targetIndex)` on the
+     paragraph-level list; they keep working because the chunk list is derived
+     from the same paragraph index.
+   - `pause()` / `resume()` are untouched (true `MediaPlayer` pause/resume on the
+     current WAV chunk); only the re-announce target becomes "owning paragraph."
+
+7. Optional user-facing toggle (the "option" in the filename).
+   - Add `SettingsStore.progressiveChunking: Boolean` (default ON) and a
+     Settings switch. `SpeechController` reads it when building the chunk list;
+     when OFF, chunking degenerates to one chunk per paragraph = today's
+     behavior, so we keep a safe rollback.
+   - Open question: does the user actually want a visible toggle, or should this
+     just be always-on? (The issue text doesn't mention a setting; the filename
+     does.)
+
+Files to touch (future implementation, in order)
+-------------------------------------------------
+1. `tts/SpeechController.kt` — add `Chunk`, the splitter + ramp, migrate
+   synthesis/play-head/look-ahead to chunk indices, and gate
+   `onUtteranceStarted` to first-of-paragraph. (Largest change.)
+2. `SettingsStore.kt` — `progressiveChunking` key + default (if toggle wanted).
+3. `SettingsActivity.kt` — surface the toggle (if wanted).
+4. Debug instrumentation via `DebugLog.d(TAG, ...)` for ramp sizes, prime
+   completion, and first-audio delay.
+
+Risks / open questions
+----------------------
+- Sentence-splitting fidelity: a naive splitter can break on "Mr.", "U.S.",
+  "3.14", initials ("J. R. R. Tolkien"), etc. Mitigation: split only on
+  terminal punctuation + whitespace + a following capital/quote/open-paren;
+  never split inside a known abbreviation; and run the splitter AFTER
+  `Normalizer` (which already rewrites years/decimal ranges and may defuse some
+  decimals). Blast radius of a bad split is only a slightly different pause, not
+  lost text.
+- More `synthesizeToFile` calls during priming: each call has per-warm-up
+  overhead (ticket 02). Priming is transient and uses only a few small chunks,
+  so the penalty is bounded and one-time per start; steady state is unchanged.
+- Chunk-duration vs. fixed-count look-ahead horizon (see #3).
+- `engine.maxSpeechInputLength` must be enforced per chunk regardless of ramp.
+
+Decision points for you (please confirm before implementation)
+--------------------------------------------------------------
+1. Ramp ladder "1, 2, 4, rest-of-paragraph" — ok, or do you want exactly
+   "1, 2, rest" as written in the issue?
+2. Ramp scope (a) first-paragraph-only vs (b) until-buffer-primed
+   (recommended)?
+3. Always-on vs. a user toggle (default on)?
+4. Treat title/heading as its own single chunk at cold start (recommended)?
