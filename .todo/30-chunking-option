@@ -151,3 +151,31 @@ Decision points for you (please confirm before implementation)
    (recommended)?
 3. Always-on vs. a user toggle (default on)?
 4. Treat title/heading as its own single chunk at cold start (recommended)?
+==Status Report: 2026-10-17 (IMPLEMENTED)==
+
+User said "go" without answering the four decision points, so I took the plan's
+recommendations and left ticket 25 alone as requested:
+1. Ramp ladder: 1, 2, 4, rest-of-paragraph.
+2. Ramp scope: the first PRIME_PARAGRAPHS (3) paragraphs from any fresh start,
+   approximating "until the look-ahead buffer is primed".
+3. A user toggle (default ON) — the "option" in the ticket filename.
+4. Title/heading stays a single chunk at cold start.
+
+Implemented:
+- `tts/SpeechController.kt`
+  - Added private `Chunk(utteranceIndex, text, isFirstOfParagraph)` and moved the
+    synthesis/play-back/play-head/look-ahead pipeline onto a `chunks` list, while
+    `queue` remains the paragraph-level tracking list.
+  - `buildChunks()`: title/heading = one chunk; the first 3 paragraphs from a
+    (re)start use the sentence ladder (1, 2, 4, rest); later paragraphs are whole
+    chunks. Runs on normalized text; chunks are capped at
+    `TextToSpeech.getMaxSpeechInputLength()` via `splitToFit`.
+  - `onUtteranceStarted` now fires only for `Chunk.isFirstOfParagraph`, so the
+    blue line / bookmarks stay paragraph-level (MainViewModel unchanged).
+  - `enqueueFrom` / `skipSections` / `resume` map chunk -> owning utterance.
+  - Look-ahead horizon re-expressed in chunk units (`LOOK_AHEAD_CHUNKS = 8`).
+- `SettingsStore.kt` — `progressiveChunking` (default true).
+- `SettingsActivity.kt` — "Sentence-by-sentence start" toggle under Playback.
+
+Validation: `compileDebugKotlin`, `testDebugUnitTest`, and `assembleDebug` all
+pass; the debug APK (0.7) was regenerated with a fresh build timestamp.
