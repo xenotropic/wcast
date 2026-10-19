@@ -63,6 +63,15 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_PROGRESSIVE_CHUNKING, true)
         set(value) = prefs.edit().putBoolean(KEY_PROGRESSIVE_CHUNKING, value).apply()
 
+    /**
+     * When true (default), the first time an article starts playing it is
+     * automatically added to the user's bookmarks (ticket 35). Toggled from
+     * Settings → Playback → "Bookmark on play".
+     */
+    var bookmarkOnPlay: Boolean
+        get() = prefs.getBoolean(KEY_BOOKMARK_ON_PLAY, true)
+        set(value) = prefs.edit().putBoolean(KEY_BOOKMARK_ON_PLAY, value).apply()
+
     private companion object {
         const val PREFS_NAME = "wcast_settings"
         const val KEY_CONTINUITY = "continuity"
@@ -70,5 +79,6 @@ class SettingsStore(context: Context) {
         const val KEY_EULA_ACCEPTED = "eula_accepted"
         const val KEY_DEBUG_LOGS_ENABLED = "debug_logs_enabled"
         const val KEY_PROGRESSIVE_CHUNKING = "progressive_chunking"
+        const val KEY_BOOKMARK_ON_PLAY = "bookmark_on_play"
     }
 }

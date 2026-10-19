@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SettingsVoice
 import androidx.compose.material3.HorizontalDivider
@@ -88,10 +89,13 @@ class SettingsActivity : ComponentActivity() {
                             settings.debugLogsEnabled = enabled
                             DebugLog.enabled = enabled
                         },
+                        initialBookmarkOnPlay = settings.bookmarkOnPlay,
+                        onBookmarkOnPlayChange = { settings.bookmarkOnPlay = it },
                         onBack = { finish() },
                         onOpenTtsSettings = ::openTtsSettings,
                         onReloadVoice = ::reloadVoice,
-                        onViewDebugLogs = ::openDebugLogs
+                        onViewDebugLogs = ::openDebugLogs,
+                        onViewNormalizedText = ::openNormalizedText
                     )
                 }
             }
@@ -140,6 +144,11 @@ class SettingsActivity : ComponentActivity() {
     private fun openDebugLogs() {
         startActivity(Intent(this, DebugLogActivity::class.java))
     }
+
+    /** Opens the normalized-text viewer so users can inspect what TTS reads. */
+    private fun openNormalizedText() {
+        startActivity(Intent(this, NormalizedTextActivity::class.java))
+    }
 }
 
 @Composable
@@ -155,15 +164,19 @@ private fun SettingsScreen(
     onProgressiveChunkingChange: (Boolean) -> Unit,
     initialDebugLogsEnabled: Boolean,
     onDebugLogsEnabledChange: (Boolean) -> Unit,
+    initialBookmarkOnPlay: Boolean,
+    onBookmarkOnPlayChange: (Boolean) -> Unit,
     onBack: () -> Unit,
     onOpenTtsSettings: () -> Unit,
     onReloadVoice: () -> Unit,
-    onViewDebugLogs: () -> Unit
+    onViewDebugLogs: () -> Unit,
+    onViewNormalizedText: () -> Unit
 ) {
     var continuity by remember { mutableStateOf(initialContinuity) }
     var playerBarScale by remember { mutableStateOf(initialPlayerBarScale) }
     var progressiveChunking by remember { mutableStateOf(initialProgressiveChunking) }
     var debugLogsEnabled by remember { mutableStateOf(initialDebugLogsEnabled) }
+    var bookmarkOnPlay by remember { mutableStateOf(initialBookmarkOnPlay) }
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
@@ -218,6 +231,19 @@ private fun SettingsScreen(
                 subtitle = "Re-detect the selected text-to-speech engine and voice",
                 onClick = onReloadVoice
             )
+            SettingsRow(
+                icon = {
+                    Icon(
+                        imageVector = Icons.Filled.Description,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                },
+                title = "View normalized text",
+                subtitle = "See the exact text the text-to-speech engine is reading",
+                onClick = onViewNormalizedText
+            )
 
             Spacer(modifier = Modifier.height(24.dp))
             SettingsSection(title = "Playback")
@@ -237,6 +263,15 @@ private fun SettingsScreen(
                 onCheckedChange = { newValue ->
                     progressiveChunking = newValue
                     onProgressiveChunkingChange(newValue)
+                }
+            )
+            SettingsToggleRow(
+                title = "Bookmark on play",
+                subtitle = "Automatically bookmark an article the first time you start playing it.",
+                checked = bookmarkOnPlay,
+                onCheckedChange = { newValue ->
+                    bookmarkOnPlay = newValue
+                    onBookmarkOnPlayChange(newValue)
                 }
             )
             SettingsSliderRow(

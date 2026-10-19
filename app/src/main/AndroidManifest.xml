@@ -50,6 +50,11 @@
             android:exported="false"
             android:label="@string/app_name" />
 
+        <activity
+            android:name=".NormalizedTextActivity"
+            android:exported="false"
+            android:label="@string/app_name" />
+
         <!-- Foreground playback service. Media3's MediaSessionService owns the
              media session + notification and handles wired/Bluetooth headset
              buttons and lock-screen/drawer transport controls itself. Started

@@ -300,6 +300,7 @@ class MainViewModel : AndroidViewModel {
      */
     private fun onPlaybackStarted(title: String?) {
         DebugLog.d(TAG, "onPlaybackStarted title=$title serviceActive=${WcastMediaService.active != null}")
+        bookmarkOnPlay(title)
         // On the *first* play (`active` is still null) start the service with the
         // play command in the intent, so the once-created service applies focus +
         // session state in onStartCommand and its onCreate bootstrap takes the
@@ -314,6 +315,22 @@ class MainViewModel : AndroidViewModel {
             WcastMediaService.startService(getApplication(), title)
         }
         SpeechControllerBridge.updateState(active = true, playing = true)
+    }
+
+    /**
+     * "Bookmark on play" (Settings → Playback): the first time an article starts
+     * playing it is added to the user's bookmarks, so a half-listened article is
+     * never lost. Already-bookmarked articles (and articles opened from bookmarks)
+     * are left untouched.
+     */
+    private fun bookmarkOnPlay(title: String?) {
+        if (!settings.bookmarkOnPlay || title == null) return
+        val state = _uiState.value as? UiState.Article ?: return
+        if (state.title != title) return
+        if (!bookmarkStore.isBookmarked(title)) {
+            bookmarkStore.saveCopy(title, state.sections)
+            _bookmarked.value = true
+        }
     }
 
     /** Stops any ongoing speech and clears the speaking state. */
@@ -371,7 +388,10 @@ class MainViewModel : AndroidViewModel {
             is SpeakingState.Section -> if (current.paused) resumeSpeaking() else pauseSpeaking()
             SpeakingState.WholeArticle -> pauseSpeaking()
             SpeakingState.WholeArticlePaused -> resumeSpeaking()
-            SpeakingState.None -> Unit
+            // Before anything has been played, the player-bar play button behaves
+            // like the title's "play whole article" button, so the most obvious
+            // control on a freshly-opened article starts full playback (ticket 31).
+            SpeakingState.None -> playWholeArticle()
         }
     }
 

@@ -10,6 +10,7 @@ import android.speech.tts.UtteranceProgressListener
 import android.os.SystemClock
 import android.util.Log
 import cloud.morris.wcast.DebugLog
+import cloud.morris.wcast.NormalizedTextStore
 import cloud.morris.wcast.SettingsStore
 import cloud.morris.wcast.data.ArticleSection
 import cloud.morris.wcast.normalization.Normalizer
@@ -260,6 +261,11 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         val normalized = utterances
             .filter { it.text.isNotBlank() }
             .map { it.copy(text = normalizer.normalize(it.text)) }
+        // Expose the exact text handed to the TTS engine (ticket 34).
+        NormalizedTextStore.capture(
+            heading = normalized.firstOrNull()?.text.orEmpty(),
+            text = normalized.joinToString("\n\n") { it.text }
+        )
         if (!ready) {
             pendingQueue = normalized
             return
