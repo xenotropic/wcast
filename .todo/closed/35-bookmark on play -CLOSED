@@ -1,1 +1,10 @@
-Let's add a option that is on by default to bookmark on play. So the first time a person presses play on an article, then it becomes a bookmarked article. The option would just be called bookmark on play and would be in the settings. 
+==Original Issue==
+Let's add a option that is on by default to bookmark on play. So the first time a person presses play on an article, then it becomes a bookmarked article. The option would just be called bookmark on play and would be in the settings.
+
+==Status Report: 2026-10-19 10:27 PDT (Monday)==
+Implemented. Added a `bookmarkOnPlay` setting (default true) to SettingsStore and
+a Settings → Playback → "Bookmark on play" toggle. MainViewModel now bookmarks an
+article the first time it starts playing (only if it is not already bookmarked)
+and updates the bookmark star state. Already-bookmarked articles, and articles
+opened straight from bookmarks, are left untouched. Verified with
+`./gradlew assembleDebug` and `./gradlew testDebugUnitTest` (both pass).

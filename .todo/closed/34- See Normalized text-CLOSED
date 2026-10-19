@@ -1,1 +1,12 @@
-I'm going to be working on normalizers for this and so it would be helpful to see exactly the normalized text that the app itself or that the TTS engine is trying to read so that if it doesn't read it right I can see exactly what the issue might have been. Please add an item button to the settings the same as the other ones in terms of type that shows a copy-pastable view of the normalized text that is currently being read. The general design UI pattern for this would be the existing functionality for copying the debug logs. 
+==Original Issue==
+I'm going to be working on normalizers for this and so it would be helpful to see exactly the normalized text that the app itself or that the TTS engine is trying to read so that if it doesn't read it right I can see exactly what the issue might have been. Please add an item button to the settings the same as the other ones in terms of type that shows a copy-pastable view of the normalized text that is currently being read. The general design UI pattern for this would be the existing functionality for copying the debug logs.
+
+==Status Report: 2026-10-19 10:27 PDT (Monday)==
+Implemented. Added a new `NormalizedTextStore` (a `@Volatile` String holder, since
+capture happens on the main thread while synthesis callbacks run on other
+threads). `SpeechController` now calls `NormalizedTextStore.capture(...)` with the
+exact normalized utterances handed to the TTS engine. Added a read-only, copyable
+`NormalizedTextActivity` (select-all/copy via the top bar, mirroring the debug-log
+viewer) and a Settings → Voice → "View normalized text" entry point, registered in
+AndroidManifest.xml. Verified with `./gradlew assembleDebug` and
+`./gradlew testDebugUnitTest` (both pass). 
