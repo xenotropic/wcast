@@ -10,12 +10,12 @@ plugins {
 
 android {
     namespace = "cloud.morris.wcast"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "cloud.morris.wcast"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 36
         // Incremented with every release tag (Google Play requires it to go up).
         versionCode = 2
         // Defaults to 1.0 (the first Google Play release) for local builds. CI
