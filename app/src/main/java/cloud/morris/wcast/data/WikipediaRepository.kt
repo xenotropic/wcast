@@ -3,6 +3,7 @@ package cloud.morris.wcast.data
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
+import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import org.json.JSONArray
 import java.net.URLEncoder
@@ -63,13 +64,27 @@ class WikipediaRepository {
             ?: throw IllegalStateException("Could not locate article content for \"${title.trim()}\".")
 
         // Capture the canonical main image (and caption) before scrubbing removes
-        // the infobox / figure nodes that hold it (ticket 33).
-        val image = extractMainImage(content)
+        // the infobox / figure nodes that hold it (ticket 33). Disambiguation
+        // pages (e.g. "Python") have no single subject image — just a Wiktionary
+        // "look up" hatnote/infobox logo — so they get no image (ticket 38).
+        val image = if (isDisambiguationPage(document)) null else extractMainImage(content)
 
         scrubUnwantedNodes(content)
         scrubPronunciationNodes(content)
         FetchedArticle(structureSections(content), image)
     }
+
+    /**
+     * True when the page is a disambiguation page (a list of possible senses,
+     * e.g. "Python"). These have no single subject illustration — the infobox is
+     * just a Wiktionary "look up" hatnote logo — so the main image is suppressed
+     * (ticket 38). Detected via MediaWiki's `mw:PageProp/disambiguation` head
+     * link, with a fallback on the body's `#disambigbox` / `.dmbox-disambig`
+     * markers.
+     */
+    private fun isDisambiguationPage(document: Document): Boolean =
+        document.selectFirst("link[rel='mw:PageProp/disambiguation']") != null ||
+            document.selectFirst("#disambigbox, .dmbox-disambig") != null
 
     /**
      * Finds the article's canonical "main image" (ticket 33). Preference order
