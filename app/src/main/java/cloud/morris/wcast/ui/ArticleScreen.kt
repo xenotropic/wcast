@@ -919,7 +919,7 @@ private fun FloatedImageParagraph(
             AnnotatedParagraphText(annotated, onLinkClick)
             Spacer(modifier = Modifier.height(8.dp))
         } else {
-            val imageWidthPx = (MainImageWidth.value * density.density).roundToInt()
+            val imageWidthPx = (fullWidthPx * IMAGE_WIDTH_FRACTION).roundToInt()
             val gapPx = (8f * density.density).roundToInt()
             val narrowWidthPx = (fullWidthPx - imageWidthPx - gapPx).coerceAtLeast(1)
             val imageHeightPx =
@@ -965,7 +965,7 @@ private fun FloatedImageParagraph(
                         bitmap = bitmap,
                         contentDescription = "Article image",
                         modifier = Modifier
-                            .width(MainImageWidth)
+                            .width(Dp(imageWidthPx / density.density))
                             .clip(RoundedCornerShape(8.dp))
                     )
                 }
@@ -992,4 +992,5 @@ private fun PlayStopButton(
     }
 }
 
-private val MainImageWidth = 140.dp
+/** Fraction of the column width the floated lead image occupies (ticket 38). */
+private const val IMAGE_WIDTH_FRACTION = 0.4f
