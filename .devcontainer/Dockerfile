@@ -31,3 +31,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # .devcontainer/devcontainer.json) disables it so git never falls back to the
 # indefinite host keychain.
 RUN su - vscode -c "git config --global credential.helper 'cache --timeout=28800'"
+
+# Pre-create the VS Code Server directory and assign user permissions
+# to ensure Docker volume mounts initialize with vscode ownership.
+RUN mkdir -p /home/vscode/.vscode-server/data/User/globalStorage \
+    && chown -R vscode:vscode /home/vscode/.vscode-server
+
+# The base devcontainer image ships a themed ~/.bashrc that installs a
+# `trap 'preexec' DEBUG` plus a `precmd` in PROMPT_COMMAND, both of which emit
+# terminal-title escape sequences. Those clobber the OSC 633 markers that
+# Cline/VS Code shell integration uses to detect "command finished", causing
+# commands to hang on a timing heuristic. Strip the xterm trap block (keeping the
+# git-branch prompt) so shell integration can complete reliably.
+RUN sed -i '/^# Check if the terminal is xterm$/,/^fi$/d' /home/vscode/.bashrc \
+    && chown vscode:vscode /home/vscode/.bashrc
