@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
@@ -32,6 +33,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
@@ -64,15 +66,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.foundation.text.ClickableText
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -85,13 +93,13 @@ import cloud.morris.wcast.ResumePrompt
 import cloud.morris.wcast.SettingsActivity
 import cloud.morris.wcast.SpeakingState
 import cloud.morris.wcast.UiState
-import cloud.morris.wcast.data.ArticleImage
 import cloud.morris.wcast.data.ArticleParagraph
 import cloud.morris.wcast.data.ArticleSection
 import cloud.morris.wcast.data.SearchSuggestion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import kotlin.math.roundToInt
 
 @Composable
 fun ArticleScreen(
@@ -222,7 +230,6 @@ fun ArticleScreen(
                 is UiState.Article -> ArticleContent(
                     title = state.title,
                     sections = state.sections,
-                    image = state.image,
                     thumbFile = thumbFile,
                     speakingState = speakingState,
                     activePosition = activePosition,
@@ -534,7 +541,6 @@ private fun SuggestionRow(
 private fun ArticleContent(
     title: String,
     sections: List<ArticleSection>,
-    image: ArticleImage?,
     thumbFile: File?,
     speakingState: SpeakingState,
     activePosition: ActivePosition?,
@@ -545,6 +551,17 @@ private fun ArticleContent(
     onLinkClick: (String) -> Unit
 ) {
     val isTitleActive = activePosition?.sectionId == null
+
+    // The article's main image, decoded off the main thread once and floated
+    // beside the lead paragraph (ticket 38).
+    val leadBitmap by produceState<ImageBitmap?>(initialValue = null, thumbFile) {
+        value = thumbFile?.let { file ->
+            withContext(Dispatchers.IO) {
+                runCatching { BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap() }
+                    .getOrNull()
+            }
+        }
+    }
 
     // Top-level (h2 / level 2) sections with a heading. When there are more
     // than three, show a "Contents" outline as the first scrollable item so it
@@ -593,11 +610,7 @@ private fun ArticleContent(
                 }
             )
         }
-        if (image != null || thumbFile != null) {
-            item(key = "main-image") {
-                MainImageBlock(image, thumbFile)
-            }
-        }
+        var isFirstParagraph = true
         sections.forEach { section ->
             section.heading?.let { heading ->
                 val headingActive =
@@ -635,6 +648,8 @@ private fun ArticleContent(
             section.paragraphs.forEachIndexed { index, paragraph ->
                 val paragraphActive =
                     activePosition?.sectionId == section.id && activePosition.paragraphIndex == index
+                val floatBitmap = if (isFirstParagraph) leadBitmap else null
+                isFirstParagraph = false
                 item(key = "${section.id}/paragraph/$index") {
                     ArticleRow(
                         isActive = paragraphActive,
@@ -649,10 +664,14 @@ private fun ArticleContent(
                                     )
                                 }
                             ) {
-                                ParagraphText(
-                                    paragraph = paragraph,
-                                    onLinkClick = onLinkClick
-                                )
+                                if (floatBitmap != null) {
+                                    FloatedImageParagraph(paragraph, floatBitmap, onLinkClick)
+                                } else {
+                                    ParagraphText(
+                                        paragraph = paragraph,
+                                        onLinkClick = onLinkClick
+                                    )
+                                }
                             }
                         }
                     )
@@ -801,21 +820,22 @@ private fun ParagraphText(
     paragraph: ArticleParagraph,
     onLinkClick: (String) -> Unit
 ) {
-    if (paragraph.links.isEmpty()) {
-        Text(
-            text = paragraph.text,
-            style = MaterialTheme.typography.bodyLarge
-        )
-        return
-    }
+    AnnotatedParagraphText(
+        annotated = paragraphAnnotated(paragraph, MaterialTheme.colorScheme.primary),
+        onLinkClick = onLinkClick
+    )
+}
 
-    val annotated = buildAnnotatedString {
+/** Builds the link-annotated string for an [ArticleParagraph]. */
+private fun paragraphAnnotated(paragraph: ArticleParagraph, linkColor: Color): AnnotatedString {
+    if (paragraph.links.isEmpty()) return AnnotatedString(paragraph.text)
+    return buildAnnotatedString {
         append(paragraph.text)
         paragraph.links.forEach { link ->
             if (link.start in 0..paragraph.text.length && link.end in 0..paragraph.text.length && link.start < link.end) {
                 addStyle(
                     style = SpanStyle(
-                        color = MaterialTheme.colorScheme.primary,
+                        color = linkColor,
                         textDecoration = TextDecoration.Underline
                     ),
                     start = link.start,
@@ -830,17 +850,112 @@ private fun ParagraphText(
             }
         }
     }
+}
 
-    ClickableText(
-        text = annotated,
-        style = MaterialTheme.typography.bodyLarge,
-        onClick = { offset ->
-            annotated.getStringAnnotations("LINK", offset, offset)
-                .firstOrNull()
-                ?.item
-                ?.let(onLinkClick)
+@Composable
+private fun AnnotatedParagraphText(
+    annotated: AnnotatedString,
+    onLinkClick: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val hasLinks = annotated.getStringAnnotations("LINK", 0, annotated.length).isNotEmpty()
+    if (hasLinks) {
+        ClickableText(
+            text = annotated,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = modifier,
+            onClick = { offset ->
+                annotated.getStringAnnotations("LINK", offset, offset)
+                    .firstOrNull()
+                    ?.item
+                    ?.let(onLinkClick)
+            }
+        )
+    } else {
+        Text(
+            text = annotated,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = modifier
+        )
+    }
+}
+
+/**
+ * Renders the lead paragraph with the article's main image floated to the right,
+ * so the text wraps around it instead of stacking the image above the text
+ * (ticket 38). The paragraph is split at the first line that would sit below the
+ * image: the part above is laid out in the narrowed left column, the rest flows
+ * full-width beneath the image, exactly like a floated illustration.
+ */
+@OptIn(ExperimentalTextApi::class)
+@Composable
+private fun FloatedImageParagraph(
+    paragraph: ArticleParagraph,
+    bitmap: ImageBitmap,
+    onLinkClick: (String) -> Unit
+) {
+    val linkColor = MaterialTheme.colorScheme.primary
+    val annotated = remember(paragraph, linkColor) { paragraphAnnotated(paragraph, linkColor) }
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val style = MaterialTheme.typography.bodyLarge
+
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val fullWidthPx = constraints.maxWidth
+        val imageWidthPx = (MainImageWidth.value * density.density).roundToInt()
+        val gapPx = (8f * density.density).roundToInt()
+        val narrowWidthPx = (fullWidthPx - imageWidthPx - gapPx).coerceAtLeast(1)
+        val imageHeightPx =
+            (imageWidthPx * bitmap.height.toFloat() / bitmap.width.toFloat()).roundToInt()
+
+        // Measure the paragraph at the narrowed width to find how much text fits
+        // in the column beside the image.
+        val sideLayout = remember(annotated, narrowWidthPx, style) {
+            measurer.measure(
+                text = annotated,
+                style = style,
+                constraints = Constraints(maxWidth = narrowWidthPx)
+            )
         }
-    )
+        var split = 0
+        for (i in 0 until sideLayout.lineCount) {
+            if (sideLayout.getLineBottom(i) <= imageHeightPx) {
+                split = sideLayout.getLineEnd(i, visibleEnd = true)
+            } else {
+                break
+            }
+        }
+        val sideText = if (split in 1 until annotated.length) {
+            annotated.subSequence(0, split)
+        } else {
+            null
+        }
+        val belowText = if (split in 1 until annotated.length) {
+            annotated.subSequence(split, annotated.length)
+        } else {
+            annotated
+        }
+
+        Column {
+            Row(verticalAlignment = Alignment.Top) {
+                if (sideText != null) {
+                    Column(modifier = Modifier.width(Dp(narrowWidthPx / density.density))) {
+                        AnnotatedParagraphText(sideText, onLinkClick)
+                    }
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Image(
+                    bitmap = bitmap,
+                    contentDescription = "Article image",
+                    modifier = Modifier
+                        .width(MainImageWidth)
+                        .clip(RoundedCornerShape(8.dp))
+                )
+            }
+            AnnotatedParagraphText(belowText, onLinkClick)
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+    }
 }
 
 @Composable
@@ -856,48 +971,6 @@ private fun PlayStopButton(
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(28.dp)
         )
-    }
-}
-
-/**
- * The article's canonical main image (ticket 33), shown right-aligned near the
- * top of the article with its caption underneath. The bitmap is decoded off the
- * main thread from the ViewModel's cached thumbnail file (which may still be
- * downloading; the image simply appears once ready).
- */
-@Composable
-private fun MainImageBlock(image: ArticleImage?, thumbFile: File?) {
-    val bitmap by produceState<ImageBitmap?>(initialValue = null, thumbFile) {
-        value = thumbFile?.let { file ->
-            withContext(Dispatchers.IO) {
-                runCatching { BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap() }
-                    .getOrNull()
-            }
-        }
-    }
-    val caption = image?.caption
-    if (bitmap == null && caption.isNullOrBlank()) return
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.End
-    ) {
-        bitmap?.let {
-            Image(
-                bitmap = it,
-                contentDescription = caption ?: "Article image",
-                modifier = Modifier
-                    .width(MainImageWidth)
-                    .clip(RoundedCornerShape(8.dp))
-            )
-        }
-        if (!caption.isNullOrBlank()) {
-            Text(
-                text = caption,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.width(MainImageWidth)
-            )
-        }
     }
 }
 
