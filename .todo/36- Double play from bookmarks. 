@@ -1,2 +1,130 @@
-If you open an article, bookmark it, start playing, then while it's playing, go to bookmarks and open another bookmarked file that was already playing in the past and then tap on it, you get the resume playing from prior location dialog, and then you tap that, then both the prior article that you started playing and the new one that you resumed on start playing simultaneously, just talking over each other. There's two streams of audio happening at the same time. Seems like hopefully a kind of simple fix, that just once you're starting a new stream of audio, or even just clicking on a bookmark so that you've loaded another page should terminate the existing audio stream. 
-Editing to add that I also got this without doing bookmarks on an unbookmarked article in its first paragraph where actually I'm not really sure what the two voices were saying but they were both reading the same article at different places So well the bookmarks method is a reliable way to reproduce it seems like it also has other paths to have the same sort of negative functionality that's fairly rare to have it occur spontaneously though this is the first time in at least 20 or 30 minutes of listening to different articles that it happened 
+==Original Issue==
+
+If you open an article, bookmark it, start playing, then while it's playing, go to bookmarks and open another bookmarked file that was already playing in the past and then tap on it, you get the resume playing from prior location dialog, and then you tap that, then both the prior article that you started playing and the new one that you resumed on start playing simultaneously, just talking over each other. There's two streams of audio happening at the same time. Seems like hopefully a kind of simple fix, that just once you're starting a new stream of audio, or even just clicking on a bookmark so that you've loaded another page should terminate the existing audio stream.
+Editing to add that I also got this without doing bookmarks on an unbookmarked article in its first paragraph where actually I'm not really sure what the two voices were saying but they were both reading the same article at different places So well the bookmarks method is a reliable way to reproduce it seems like it also has other paths to have the same sort of negative functionality that's fairly rare to have it occur spontaneously though this is the first time in at least 20 or 30 minutes of listening to different articles that it happened
+
+==Status Report: 2026-10-19 10:56 PDT (Monday)==
+
+No implementation yet — architecture proposal for review before any code.
+
+Root cause
+----------
+Opening a bookmark does not reuse the existing reading screen. MainActivity is
+declared with the default launchMode="standard" (the manifest element sets no
+launchMode), and BookmarksActivity.openInMain() starts it with only
+FLAG_ACTIVITY_SINGLE_TOP. Because MainActivity is NOT the top of the task at that
+moment (BookmarksActivity is), SINGLE_TOP does nothing and Android creates a second
+MainActivity instance.
+
+Each MainActivity hosts its own MainViewModel (Compose viewModel() scoped to the
+activity) and therefore its own SpeechController (the object that renders WAVs and
+owns the live MediaPlayer). The first controller keeps playing. The process-wide
+plumbing is a singleton — WcastMediaService.active and the SpeechControllerBridge
+callbacks — and the second ViewModel's init overwrites SpeechControllerBridge.on* to
+point at itself, so the media notification/session now controls only the NEW
+controller. The old controller is unreachable, so both streams are audible while only
+the newest one is stoppable from the notification.
+
+openBookmarkedArticle() does call stopSpeaking(), but that stops the new ViewModel's
+still-idle controller, not the first controller that is actually playing.
+
+This also explains the "spontaneous" second report (two voices reading the same
+article at different offsets): any second entry into MainActivity while it is not the
+task top — the media-notification content intent in
+WcastMediaService.appContentIntent() also uses only FLAG_ACTIVITY_SINGLE_TOP, and any
+future deep link would behave the same — can create a duplicate controller.
+
+Proposed fix (primary)
+----------------------
+Enforce a single MainActivity instance so there can only ever be one live
+SpeechController.
+
+1. Add android:launchMode="singleTask" to the <activity android:name=".MainActivity">
+   element in app/src/main/AndroidManifest.xml. Wcast is a single-reader app whose
+   launcher activity is the reading screen, so singleTask is the right mode: every
+   intent (bookmark open, notification tap, launcher, deep link) converges on the
+   existing instance and is delivered through onNewIntent(), which already reads
+   EXTRA_OPEN_BOOKMARK.
+
+2. (Defensive, complementary) Make the intent flags explicit so the behavior does not
+   silently depend on launch mode:
+   - BookmarksActivity.openInMain(): use
+     FLAG_ACTIVITY_CLEAR_TOP or FLAG_ACTIVITY_SINGLE_TOP (instead of just SINGLE_TOP).
+   - WcastMediaService.appContentIntent(): add FLAG_ACTIVITY_CLEAR_TOP so a
+     notification tap reuses the screen rather than stacking a second copy.
+
+Proposed fix (small correctness reorder)
+----------------------------------------
+In MainViewModel.openBookmarkedArticle(), call stopSpeaking() before setting
+_uiState = UiState.Loading (and before any coroutine work), so selecting a bookmark
+terminates the current stream immediately rather than only after the stored copy is
+loaded. With a single instance this is not strictly required, but it makes the
+"stop the old stream before starting the new one" invariant obvious at the call site.
+
+Optional hardening (defense-in-depth)
+-------------------------------------
+Add a process-wide "only one speaker" guard so a playing stream can never coexist with
+another, independent of activity lifecycle. Minimal shape: a registry in
+SpeechController that records the currently live controller, and start()/startQueue()
+first calls stop() on any other live controller. Cheap, but overlaps the launch-mode
+fix; recommend landing the primary fix + reorder first and adding this only if another
+duplicate-stream path is still reachable.
+
+Longer term (out of scope for this ticket)
+------------------------------------------
+The clean end-state is to move the single SpeechController out of the per-activity
+ViewModel and into the already-singleton WcastMediaService, with ViewModels binding to
+it through SpeechControllerBridge. That makes "one live TTS stream per process"
+structural rather than lifecycle-dependent. It overlaps ticket 21/23 work, so noted
+here but not proposed now.
+
+Files that would change (for review — nothing edited yet)
+---------------------------------------------------------
+- app/src/main/AndroidManifest.xml (launchMode)
+- app/src/main/java/cloud/morris/wcast/BookmarksActivity.kt (intent flags)
+- app/src/main/java/cloud/morris/wcast/tts/WcastMediaService.kt (appContentIntent flags)
+- app/src/main/java/cloud/morris/wcast/MainViewModel.kt (reorder stopSpeaking)
+- (optional) app/src/main/java/cloud/morris/wcast/tts/SpeechController.kt (singleton guard)
+
+Difficulty re-rating
+--------------------
+Down from 4 to 3: the root cause is subtle (activity duplication + singleton bridge
+mismatch) but the fix is a few small, low-risk changes plus device verification of the
+bookmark and notification-tap reproduction paths.
+
+==Status Report: 2026-10-19 11:25 PDT (Monday)==
+
+Implemented the fix (ticket left open for you to close).
+
+Changes
+-------
+1. app/src/main/AndroidManifest.xml — added android:launchMode="singleTask" to
+   .MainActivity so every intent (bookmark open, notification tap, launcher, deep link)
+   converges on the single reading-screen instance and is delivered via onNewIntent().
+2. app/src/main/java/cloud/morris/wcast/BookmarksActivity.kt — openInMain() now uses
+   FLAG_ACTIVITY_CLEAR_TOP or FLAG_ACTIVITY_SINGLE_TOP.
+3. app/src/main/java/cloud/morris/wcast/tts/WcastMediaService.kt — appContentIntent()
+   now uses FLAG_ACTIVITY_CLEAR_TOP or FLAG_ACTIVITY_SINGLE_TOP so a notification tap
+   reuses the screen.
+4. app/src/main/java/cloud/morris/wcast/MainViewModel.kt — openBookmarkedArticle()
+   now calls stopSpeaking() immediately (before launching the load coroutine) so the
+   currently playing stream is terminated the moment a bookmark is selected.
+
+Why this fixes the bug
+----------------------
+A single MainActivity instance means a single MainViewModel => a single SpeechController
+=> a single live MediaPlayer. Reusing the reading screen (instead of stacking a second
+one) removes the duplicate controller that produced the two simultaneous streams, and
+the earlier stopSpeaking() guarantees the old stream stops before the new article loads.
+
+Build
+-----
+./gradlew assembleDebug succeeded; app/build/outputs/apk/debug/app-debug.apk was
+regenerated (18.6 MB, 2026-10-19 18:25 UTC) with
+BUILD_TIME_PT=2026-10-19T11:25:12 PDT.
+
+Not done (left open)
+--------------------
+- Ticket intentionally NOT closed (no -CLOSED rename; still under "Open" in the index).
+- Optional "only one speaker" singleton guard (defense-in-depth) was not implemented,
+  per the proposal's recommendation to land the primary fix first.

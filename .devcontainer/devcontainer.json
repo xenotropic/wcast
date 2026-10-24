@@ -4,7 +4,8 @@
     "dockerfile": "Dockerfile"
   },
   "runArgs": [
-    "--cap-add=NET_ADMIN"
+    "--cap-add=NET_ADMIN",
+    "--add-host=host.docker.internal:host-gateway"
   ],
   "customizations": {
     "vscode": {
