@@ -240,10 +240,16 @@ class WcastMediaService : MediaSessionService() {
                 SpeechControllerBridge.onStop?.invoke()
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                // Short interruption (incoming call / alarm): pause and plan to resume.
+                // Short interruption (incoming call / alarm). Only plan to resume
+                // if we were actually the one being interrupted: if the user had
+                // already paused before the call, this focus loss did not cause the
+                // pause, so scheduling a resume would restart speech the user had
+                // deliberately left paused (ticket 37).
                 hasFocus = false
-                pausedByFocusLoss = true
-                SpeechControllerBridge.onPause?.invoke()
+                pausedByFocusLoss = SpeechControllerBridge.isPlaying
+                if (pausedByFocusLoss) {
+                    SpeechControllerBridge.onPause?.invoke()
+                }
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
                 // We request full GAIN (not duck), so this should not occur; if it
