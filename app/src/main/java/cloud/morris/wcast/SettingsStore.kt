@@ -18,12 +18,12 @@ class SettingsStore(context: Context) {
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     /**
-     * When true, tapping play on a section reads from that section to the end
-     * of the article; when false (default) it reads just that section's subtree
+     * When true (default), tapping play on a section reads from that section to
+     * the end of the article; when false it reads just that section's subtree
      * (the section plus its subheadings).
      */
     var continuity: Boolean
-        get() = prefs.getBoolean(KEY_CONTINUITY, false)
+        get() = prefs.getBoolean(KEY_CONTINUITY, true)
         set(value) = prefs.edit().putBoolean(KEY_CONTINUITY, value).apply()
 
     /**
