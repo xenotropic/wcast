@@ -177,6 +177,7 @@ fun ArticleScreen(
         PlayerBar(
             speakingState = speakingState,
             playerBarScale = playerBarScale,
+            isArticleOpen = uiState is UiState.Article,
             onJumpToCurrent = ::scrollToCurrentTop,
             onPlayPause = viewModel::togglePause,
             onSkipBack = viewModel::skipBack,
@@ -300,6 +301,7 @@ private fun SearchBar(
 private fun PlayerBar(
     speakingState: SpeakingState,
     playerBarScale: Int,
+    isArticleOpen: Boolean,
     onJumpToCurrent: () -> Unit,
     onPlayPause: () -> Unit,
     onSkipBack: () -> Unit,
@@ -360,7 +362,12 @@ private fun PlayerBar(
                     modifier = Modifier.size(iconSize)
                 )
             }
-            IconButton(onClick = onPlayPause, enabled = isActive) {
+            // The play/pause control is also the one obvious "start" control on a
+            // freshly-opened article (nothing is playing yet, but an article is
+            // loaded), so it must stay enabled even when `isActive` is false
+            // (ticket 31). The skip/stop controls remain disabled until speech is
+            // actually in flight, since there is nothing to skip or stop yet.
+            IconButton(onClick = onPlayPause, enabled = isActive || isArticleOpen) {
                 Icon(
                     imageVector = if (isActive && !isPaused) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                     contentDescription = if (isActive && !isPaused) "Pause" else "Play",

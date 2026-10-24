@@ -4,6 +4,8 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -24,6 +26,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.BatterySaver
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Refresh
@@ -49,6 +52,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import cloud.morris.wcast.tts.SpeechControllerBridge
 import cloud.morris.wcast.ui.theme.WcastTheme
 import kotlin.math.roundToInt
@@ -68,7 +72,18 @@ class SettingsActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val settings = SettingsStore(this)
         DebugLog.enabled = settings.debugLogsEnabled
+        val powerManager = getSystemService(PowerManager::class.java)
         setContent {
+            var batteryOptimizationIgnored by remember {
+                mutableStateOf(powerManager.isIgnoringBatteryOptimizations(packageName))
+            }
+            // Re-check the exemption when the user returns from the system settings
+            // dialog so the row's subtitle reflects the new state immediately.
+            LifecycleResumeEffect(Unit) {
+                batteryOptimizationIgnored =
+                    powerManager.isIgnoringBatteryOptimizations(packageName)
+                onPauseOrDispose { }
+            }
             WcastTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -95,7 +110,9 @@ class SettingsActivity : ComponentActivity() {
                         onOpenTtsSettings = ::openTtsSettings,
                         onReloadVoice = ::reloadVoice,
                         onViewDebugLogs = ::openDebugLogs,
-                        onViewNormalizedText = ::openNormalizedText
+                        onViewNormalizedText = ::openNormalizedText,
+                        batteryOptimizationIgnored = batteryOptimizationIgnored,
+                        onOpenBatteryOptimization = ::requestBatteryOptimizationExemption
                     )
                 }
             }
@@ -140,6 +157,47 @@ class SettingsActivity : ComponentActivity() {
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     }
 
+    /**
+     * Lets the user exempt Wcast from battery optimization so background /
+     * screen-off playback (and a paused media session) isn't killed. On most
+     * devices this shows the system's "ignore battery optimizations" dialog
+     * directly via [Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS]; where
+     * that action isn't available we fall back to the app-list page and then to
+     * the battery-saver settings screen.
+     */
+    private fun requestBatteryOptimizationExemption() {
+        val powerManager = getSystemService(PowerManager::class.java)
+        if (powerManager.isIgnoringBatteryOptimizations(packageName)) {
+            Toast.makeText(
+                this,
+                "Wcast is already exempt from battery optimization",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        val direct = Intent(
+            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+            Uri.parse("package:$packageName")
+        )
+        try {
+            startActivity(direct)
+        } catch (_: ActivityNotFoundException) {
+            try {
+                startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            } catch (_: ActivityNotFoundException) {
+                try {
+                    startActivity(Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS))
+                } catch (_: ActivityNotFoundException) {
+                    Toast.makeText(
+                        this,
+                        "No battery optimization settings screen is available on this device",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        }
+    }
+
     /** Opens the in-app debug log viewer ([DebugLogActivity]). */
     private fun openDebugLogs() {
         startActivity(Intent(this, DebugLogActivity::class.java))
@@ -170,7 +228,9 @@ private fun SettingsScreen(
     onOpenTtsSettings: () -> Unit,
     onReloadVoice: () -> Unit,
     onViewDebugLogs: () -> Unit,
-    onViewNormalizedText: () -> Unit
+    onViewNormalizedText: () -> Unit,
+    batteryOptimizationIgnored: Boolean,
+    onOpenBatteryOptimization: () -> Unit
 ) {
     var continuity by remember { mutableStateOf(initialContinuity) }
     var playerBarScale by remember { mutableStateOf(initialPlayerBarScale) }
@@ -282,6 +342,26 @@ private fun SettingsScreen(
                     playerBarScale = newValue
                     onPlayerBarScaleChange(newValue)
                 }
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+            SettingsSection(title = "Background playback")
+            SettingsRow(
+                icon = {
+                    Icon(
+                        imageVector = Icons.Filled.BatterySaver,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                },
+                title = "Battery optimization",
+                subtitle = if (batteryOptimizationIgnored) {
+                    "Wcast is exempt from battery optimization"
+                } else {
+                    "Let Wcast keep playing (or stay paused) in the background and with the screen off"
+                },
+                onClick = onOpenBatteryOptimization
             )
 
             Spacer(modifier = Modifier.height(24.dp))

@@ -1,1 +1,26 @@
 It seems like WCAST gets stopped or put to sleep if you put it in the background for a while. Seems like pretty much every app that's going to be doing something in the background has a thing where you have to do battery optimization permissions. I think for right now, rather than making it a default to ask at the beginning, like the notifications, let's put it into app settings as a thing you can tap that looks similar to the other things there that you can tap that says turn on battery optimization and then do whatever is obvious to help the user set it up whether that be requesting the permission directly so they get a pop-up (like there is currently this state with notifications on app open) or I don't know feels like some apps you they force you to go into the settings yourself Not sure if there's a system design reason for that. anyway Just take those specifics as things to investigate. the general goal is to make it so the user can turn off binary optimization for this app so it can play in the background / screen oof and then also implement anything that needs to be done in order to stay alive in the background. Maybe there's nothing other than the permission, but. 
+
+==Status Report: 2026-10-24 (Friday)==
+Implemented two things that address the reported "media card disappears after a
+minute or two when paused" symptom plus the settings entry to stay alive in the
+background:
+
+1. Settings → "Background playback" → "Battery optimization". A tappable row
+   (BatterySaver icon, subtitle reflects the current exemption state) that fires
+   `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` directly (system popup), with
+   fallbacks to `ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS` then
+   `ACTION_BATTERY_SAVER_SETTINGS`. Added `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`
+   to the manifest. State is re-read on resume via `LifecycleResumeEffect` so
+   the subtitle updates when the user returns from the dialog.
+
+2. Kept the playback service foreground while paused. Media3 only requests the
+   foreground while actively playing; when paused it posted a plain notification
+   and let the service out of the foreground, so Doze/LMK could kill the process
+   and take the media card with it. `WcastMediaService.onUpdateNotification` now
+   forces `startInForegroundRequired` while the session still has a timeline
+   (playing OR paused), releasing it only when the stream finishes (empty
+   timeline). This is what keeps the drawer card alive across a long pause.
+
+Open question still to verify on-device: whether an OEM "aggressive" battery
+saver can still sweep a foreground+paused media session even with the exemption;
+the battery-optimization row is the user-facing lever for that. 

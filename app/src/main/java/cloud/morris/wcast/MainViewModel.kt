@@ -384,6 +384,7 @@ class MainViewModel : AndroidViewModel {
 
     /** Toggles between paused and playing for the current stream. */
     fun togglePause() {
+        DebugLog.d(TAG, "togglePause state=${_speakingState.value} uiState=${_uiState.value::class.simpleName}")
         when (val current = _speakingState.value) {
             is SpeakingState.Section -> if (current.paused) resumeSpeaking() else pauseSpeaking()
             SpeakingState.WholeArticle -> pauseSpeaking()
@@ -458,6 +459,7 @@ class MainViewModel : AndroidViewModel {
     /** Opens an article directly from the bookmarks list (uses the stored copy). */
     fun openBookmarkedArticle(title: String) {
         searchJob?.cancel()
+        stopSpeaking()
         searchJob = viewModelScope.launch {
             _uiState.value = UiState.Loading
             try {
@@ -469,7 +471,6 @@ class MainViewModel : AndroidViewModel {
                         _bookmarked.value = false
                         return@launch
                     }
-                stopSpeaking()
                 presentArticle(stored.title, stored.sections)
                 _bookmarked.value = true
                 maybeOfferResume(stored)

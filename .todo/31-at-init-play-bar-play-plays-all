@@ -1,0 +1,30 @@
+==Original Issue==
+Although most of the time the playbar is there as a controller to play or pause from the existing position when you first open up an article that has a table of contents, it is the only play button that is visible. Somebody just wants to open up an article and just start listening to it. That's the most obvious button to press. So can we make it so that the play button when you first open the view, does the same thing as the play button next to the first main title -- plays the whole article from the start. After the user starts playing anywhere, then it just goes back to its existing behavior, pause/play.
+
+==Status Report: 2026-10-19 10:27 PDT (Monday)==
+Fixed. In MainViewModel the player-bar play/pause dispatcher's "nothing is
+playing yet" branch (`SpeakingState.None`) used to do nothing; it now calls
+`playWholeArticle()`. That makes the play button on a freshly-opened article
+the obvious start-from-the-top control, and once playback has started (or been
+paused) the button returns to its existing pause/resume behavior. Verified with
+`./gradlew assembleDebug` and `./gradlew testDebugUnitTest` (both pass).
+
+==Reopened: 2026-10-24 (Friday)==
+The above was incomplete: the player-bar transport buttons are gated on
+`enabled = isActive`, and `SpeakingState.None` reports `isActive == false`, so
+on a freshly-opened article the play button was still *disabled* and the new
+`togglePause()` branch was unreachable. That is why the playbar still "did
+nothing at the beginning".
+
+Real fix (committed):
+- `ArticleScreen.PlayerBar` now takes `isArticleOpen` and enables the
+  play/pause button when `isActive || isArticleOpen`, so an idle-but-open
+  article shows an enabled Play button that routes to `togglePause()` →
+  `SpeakingState.None` → `playWholeArticle()`. Skip/stop stay disabled until
+  speech is actually in flight.
+- Added a `togglePause` `DebugLog.d` trace (Settings → Debug) to make any
+  residual misbehavior observable in the in-app log.
+
+Verified with `./gradlew assembleDebug` and `./gradlew testDebugUnitTest`
+(both pass). Awaiting on-device confirmation that the freshly-opened-article
+play button now starts whole-article playback.

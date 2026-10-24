@@ -173,12 +173,21 @@ class WcastMediaService : MediaSessionService() {
 
     override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
         val player = session.player
+        val timelineCount = player.currentTimeline.windowCount
+        // Media3 only requests the foreground while actively playing/buffering;
+        // when paused it drops to a plain notification and lets the service out of
+        // the foreground. Once out of the foreground, the process is fair game for
+        // Doze/LMK, so a few minutes of pause killed the service and the media card
+        // vanished. Keep the service foreground for as long as a stream is loaded
+        // (playing OR paused), and only release it when the stream fully finishes /
+        // teardown returns an empty timeline (ticket 26).
+        val keepForeground = startInForegroundRequired || timelineCount > 0
         DebugLog.d(
             TAG,
-            "onUpdateNotification foreground=$startInForegroundRequired state=${player.playbackState} " +
-                "playWhenReady=${player.playWhenReady} timeline=${player.currentTimeline.windowCount}"
+            "onUpdateNotification foreground=$startInForegroundRequired keepForeground=$keepForeground " +
+                "state=${player.playbackState} playWhenReady=${player.playWhenReady} timeline=$timelineCount"
         )
-        super.onUpdateNotification(session, startInForegroundRequired)
+        super.onUpdateNotification(session, keepForeground)
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession {
@@ -284,7 +293,7 @@ class WcastMediaService : MediaSessionService() {
 
     private fun appContentIntent(): PendingIntent {
         val intent = Intent(this, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         return PendingIntent.getActivity(
             this,
             0,
