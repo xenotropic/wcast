@@ -924,6 +924,8 @@ private fun FloatedImageParagraph(
             val narrowWidthPx = (fullWidthPx - imageWidthPx - gapPx).coerceAtLeast(1)
             val imageHeightPx =
                 (imageWidthPx * bitmap.height.toFloat() / bitmap.width.toFloat()).roundToInt()
+            val imageWidthDp = Dp(imageWidthPx / density.density)
+            val imageHeightDp = Dp(imageHeightPx / density.density)
 
             // Measure the paragraph at the narrowed width to find how much text
             // fits in the column beside the image.
@@ -965,7 +967,7 @@ private fun FloatedImageParagraph(
                         bitmap = bitmap,
                         contentDescription = "Article image",
                         modifier = Modifier
-                            .width(Dp(imageWidthPx / density.density))
+                            .size(imageWidthDp, imageHeightDp)
                             .clip(RoundedCornerShape(8.dp))
                     )
                 }
