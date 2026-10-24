@@ -17,7 +17,7 @@ android {
         minSdk = 26
         targetSdk = 36
         // Incremented with every release tag (Google Play requires it to go up).
-        versionCode = 2
+        versionCode = 3
         // Defaults to 1.0 (the first Google Play release) for local builds. CI
         // overrides this with the pushed tag (e.g. `-PversionName=1.0`) so releases
         // are labelled correctly. See AGENTS.md for the project's versioning conventions.

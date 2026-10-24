@@ -119,7 +119,7 @@ When adding debug statements, follow these rules:
 - **Every release tag requires a `versionCode` increment first.** Google Play
   rejects uploads whose `versionCode` isn't higher than the last uploaded
   artifact, so bump `versionCode` in `app/build.gradle.kts` before cutting any
-  `v*` tag. (It currently sits at `2`.)
+  `v*` tag. (It currently sits at `3`.)
 - **Keep the build identity in sync (IMPORTANT).** The in-app About screen
   (`SettingsActivity`) shows both a version tag and a build timestamp
   (generated as `BuildConfig.BUILD_TIME_PT`, in `America/Los_Angeles` time).
