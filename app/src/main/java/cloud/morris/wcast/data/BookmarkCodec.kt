@@ -17,6 +17,9 @@ object BookmarkCodec {
 
     private const val KEY_TITLE = "title"
     private const val KEY_SECTIONS = "sections"
+    private const val KEY_IMAGE = "image"
+    private const val KEY_IMAGE_URL = "url"
+    private const val KEY_IMAGE_CAPTION = "caption"
     private const val KEY_ID = "id"
     private const val KEY_HEADING = "heading"
     private const val KEY_LEVEL = "level"
@@ -27,18 +30,24 @@ object BookmarkCodec {
     private const val KEY_LINK_START = "start"
     private const val KEY_LINK_END = "end"
 
-    /** Encodes a bookmarked article (title + sections) as a JSON document. */
-    fun encode(title: String, sections: List<ArticleSection>): String {
+    /** Encodes a bookmarked article (title + sections + image) as a JSON document. */
+    fun encode(title: String, sections: List<ArticleSection>, image: ArticleImage? = null): String {
         val root = JSONObject()
         root.put(KEY_TITLE, title)
         root.put(KEY_SECTIONS, JSONArray().apply {
             sections.forEach { put(encodeSection(it)) }
         })
+        if (image != null) {
+            root.put(KEY_IMAGE, JSONObject().apply {
+                put(KEY_IMAGE_URL, image.url)
+                if (image.caption != null) put(KEY_IMAGE_CAPTION, image.caption)
+            })
+        }
         return root.toString()
     }
 
-    /** Decodes a JSON document back into (title, sections). */
-    fun decode(json: String): Pair<String, List<ArticleSection>> {
+    /** Decodes a JSON document back into (title, sections, image). */
+    fun decode(json: String): Triple<String, List<ArticleSection>, ArticleImage?> {
         val root = JSONObject(json)
         val title = root.getString(KEY_TITLE)
         val sections = root.getJSONArray(KEY_SECTIONS).let { arr ->
@@ -46,7 +55,16 @@ object BookmarkCodec {
                 for (i in 0 until arr.length()) add(decodeSection(arr.getJSONObject(i)))
             }
         }
-        return title to sections
+        val image = if (root.isNull(KEY_IMAGE)) null else {
+            root.optJSONObject(KEY_IMAGE)?.let { obj ->
+                val url = obj.optString(KEY_IMAGE_URL).takeIf { it.isNotEmpty() } ?: return@let null
+                ArticleImage(
+                    url = url,
+                    caption = obj.optString(KEY_IMAGE_CAPTION).takeIf { it.isNotEmpty() }
+                )
+            }
+        }
+        return Triple(title, sections, image)
     }
 
     private fun encodeSection(section: ArticleSection): JSONObject = JSONObject().apply {

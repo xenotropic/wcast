@@ -44,6 +44,7 @@ class BookmarksActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val store = BookmarkStore(this)
         val repository = WikipediaRepository()
+        OrientationLock.apply(this)
         setContent {
             WcastTheme {
                 BookmarkScreen(
@@ -52,8 +53,8 @@ class BookmarksActivity : ComponentActivity() {
                     onOpen = { title -> openInMain(title) },
                     onReload = { title ->
                         lifecycleScope.launch {
-                            val sections = repository.fetchArticle(title)
-                            store.saveCopy(title, sections) // overwrites copy, preserves position
+                            val fetched = repository.fetchArticle(title)
+                            store.saveCopy(title, fetched.sections, fetched.image) // overwrites copy, preserves position
                         }
                     }
                 )
@@ -64,7 +65,7 @@ class BookmarksActivity : ComponentActivity() {
     private fun openInMain(title: String) {
         val intent = Intent(this, MainActivity::class.java)
             .putExtra(EXTRA_OPEN_BOOKMARK, title)
-            .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         startActivity(intent)
         finish()
     }

@@ -33,19 +33,32 @@ class BookmarkCodecTest {
     @Test
     fun `round trip preserves title and sections`() {
         val json = BookmarkCodec.encode("Blue whale", sections)
-        val (title, decoded) = BookmarkCodec.decode(json)
+        val (title, decoded, image) = BookmarkCodec.decode(json)
 
         assertEquals("Blue whale", title)
         assertEquals(sections, decoded)
+        assertEquals(null, image)
     }
 
     @Test
     fun `round trip preserves null heading and empty links`() {
         val json = BookmarkCodec.encode("Article", sections)
-        val (_, decoded) = BookmarkCodec.decode(json)
+        val (_, decoded, _) = BookmarkCodec.decode(json)
 
         assertEquals(null, decoded[0].heading)
         assertEquals("Taxonomy", decoded[1].heading)
         assertEquals(emptyList<ArticleLink>(), decoded[1].paragraphs[0].links)
+    }
+
+    @Test
+    fun `round trip preserves main image and caption`() {
+        val image = ArticleImage(
+            url = "https://upload.wikimedia.org/example/220px-Example.jpg",
+            caption = "An example illustration"
+        )
+        val json = BookmarkCodec.encode("Blue whale", sections, image)
+        val (_, _, decodedImage) = BookmarkCodec.decode(json)
+
+        assertEquals(image, decodedImage)
     }
 }

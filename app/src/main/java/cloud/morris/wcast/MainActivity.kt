@@ -46,6 +46,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         settings = SettingsStore(this)
         DebugLog.enabled = settings.debugLogsEnabled
+        OrientationLock.apply(this)
         pendingOpenTitle.value = intent.getStringExtra(BookmarksActivity.EXTRA_OPEN_BOOKMARK)
         requestNotificationPermissionIfNeeded()
         setContent {
@@ -83,6 +84,13 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         pendingOpenTitle.value = intent.getStringExtra(BookmarksActivity.EXTRA_OPEN_BOOKMARK)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Re-apply the portrait lock so a change made in Settings takes effect
+        // as soon as the user navigates back (ticket 27).
+        OrientationLock.apply(this)
     }
 
     /**

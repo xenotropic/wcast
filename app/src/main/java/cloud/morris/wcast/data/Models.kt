@@ -50,6 +50,25 @@ data class ArticleLink(
     val end: Int
 )
 
+/**
+ * The canonical "main image" for an article (ticket 33): a low-resolution
+ * thumbnail and its caption, shown at the top-right of the article and used as
+ * the media-player artwork. [url] points at a small Wikimedia-rendered thumb.
+ */
+data class ArticleImage(
+    val url: String,
+    val caption: String?
+)
+
+/**
+ * The result of fetching an article: its structured sections plus the optional
+ * main image (never stored in a bookmark's section list).
+ */
+data class FetchedArticle(
+    val sections: List<ArticleSection>,
+    val image: ArticleImage?
+)
+
 /** A single suggestion returned by Wikipedia's opensearch API. */
 data class SearchSuggestion(
     val title: String,

@@ -10,6 +10,7 @@ import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.core.app.NotificationManagerCompat
@@ -53,6 +54,7 @@ class WcastMediaService : MediaSessionService() {
         /** Intent action telling a running service to (re-)apply the "playing" state. */
         private const val ACTION_PLAY = "cloud.morris.wcast.action.PLAY"
         private const val EXTRA_TITLE = "cloud.morris.wcast.extra.TITLE"
+        private const val EXTRA_ARTWORK_URI = "cloud.morris.wcast.extra.ARTWORK_URI"
 
         /**
          * Starts (or restarts) the foreground service and asks it to enter the
@@ -60,10 +62,11 @@ class WcastMediaService : MediaSessionService() {
          * than [active] — because on the very first play the service is still
          * starting up, so `active` is not yet set when the caller returns.
          */
-        fun startService(context: Context, title: String?) {
+        fun startService(context: Context, title: String?, artworkUri: Uri?) {
             val intent = Intent(context, WcastMediaService::class.java)
                 .setAction(ACTION_PLAY)
                 .putExtra(EXTRA_TITLE, title)
+                .putExtra(EXTRA_ARTWORK_URI, artworkUri?.toString())
             context.startForegroundService(intent)
         }
     }
@@ -198,7 +201,10 @@ class WcastMediaService : MediaSessionService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         DebugLog.d(TAG, "onStartCommand action=${intent?.action} flags=$flags startId=$startId")
         if (intent?.action == ACTION_PLAY) {
-            onPlaybackStarted(intent.getStringExtra(EXTRA_TITLE))
+            onPlaybackStarted(
+                intent.getStringExtra(EXTRA_TITLE),
+                intent.getStringExtra(EXTRA_ARTWORK_URI)?.let(Uri::parse)
+            )
         }
         return super.onStartCommand(intent, flags, startId)
     }
@@ -262,11 +268,11 @@ class WcastMediaService : MediaSessionService() {
 
     // ── State pushed from the app's SpeechController ───────────────────────────
 
-    fun onPlaybackStarted(title: String?) {
-        DebugLog.d(TAG, "onPlaybackStarted title=$title")
+    fun onPlaybackStarted(title: String?, artworkUri: Uri?) {
+        DebugLog.d(TAG, "onPlaybackStarted title=$title artwork=$artworkUri")
         pausedByFocusLoss = false
         requestFocus()
-        player.onStarted(title)
+        player.onStarted(title, artworkUri)
     }
 
     fun onPlaybackPaused() {

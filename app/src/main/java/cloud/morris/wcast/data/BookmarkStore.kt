@@ -33,6 +33,7 @@ class BookmarkStore(context: Context) {
     data class Bookmark(
         val title: String,
         val sections: List<ArticleSection>,
+        val image: ArticleImage?,
         val sectionId: String?,
         val paragraphIndex: Int?
     )
@@ -55,9 +56,9 @@ class BookmarkStore(context: Context) {
      * Saves (or overwrites) the stored article for [title]. Does not touch any
      * previously stored position, so a reload preserves the play location.
      */
-    fun saveCopy(title: String, sections: List<ArticleSection>) {
+    fun saveCopy(title: String, sections: List<ArticleSection>, image: ArticleImage? = null) {
         if (!dir.exists()) dir.mkdirs()
-        fileFor(title).writeText(BookmarkCodec.encode(title, sections))
+        fileFor(title).writeText(BookmarkCodec.encode(title, sections, image))
         addToIndex(title)
     }
 
@@ -71,9 +72,9 @@ class BookmarkStore(context: Context) {
     fun load(title: String): Bookmark? {
         val file = fileFor(title)
         if (!file.exists()) return null
-        val (_, sections) = BookmarkCodec.decode(file.readText())
+        val (_, sections, image) = BookmarkCodec.decode(file.readText())
         val pos = decodePosition(prefs.getString(positionKey(title), null))
-        return Bookmark(title, sections, pos.sectionId, pos.paragraphIndex)
+        return Bookmark(title, sections, image, pos.sectionId, pos.paragraphIndex)
     }
 
     /** Deletes the stored article and its position (as if never stored). */

@@ -44,6 +44,7 @@ class NormalizedTextActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        OrientationLock.apply(this)
         setContent {
             WcastTheme {
                 Surface(

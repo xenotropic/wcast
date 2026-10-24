@@ -1,6 +1,8 @@
 package cloud.morris.wcast.ui
 
 import android.content.Intent
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -57,10 +59,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -80,9 +85,13 @@ import cloud.morris.wcast.ResumePrompt
 import cloud.morris.wcast.SettingsActivity
 import cloud.morris.wcast.SpeakingState
 import cloud.morris.wcast.UiState
+import cloud.morris.wcast.data.ArticleImage
 import cloud.morris.wcast.data.ArticleParagraph
 import cloud.morris.wcast.data.ArticleSection
 import cloud.morris.wcast.data.SearchSuggestion
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
 
 @Composable
 fun ArticleScreen(
@@ -95,6 +104,7 @@ fun ArticleScreen(
     val speakingState by viewModel.speakingState.collectAsStateWithLifecycle()
     val activePosition by viewModel.activePosition.collectAsStateWithLifecycle()
     val playerBarScale by viewModel.playerBarScale.collectAsStateWithLifecycle()
+    val thumbFile by viewModel.thumbFile.collectAsStateWithLifecycle()
     val bookmarked by viewModel.bookmarked.collectAsStateWithLifecycle()
     val resumePrompt by viewModel.resumePrompt.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -143,6 +153,15 @@ fun ArticleScreen(
         val index = indexFor(state.title, state.sections, activePosition, offset) ?: return
         followReading = true
         scope.launch { listState.animateScrollToItem(index, scrollOffset = 0) }
+    }
+
+    // A screen rotation recreates the activity, which resets the list to the top
+    // while playback (and thus activePosition) carries on in the ViewModel. Re-centre
+    // on what is currently being read, exactly like the "jump to current" control
+    // (ticket 27). This runs once per composition and is a no-op when nothing is
+    // playing — opening a new article stops speech first, so it won't fire then.
+    LaunchedEffect(listState) {
+        if (speakingState.isActive) scrollToCurrentTop()
     }
 
     // While following, keep the currently-read paragraph pinned to the top as
@@ -203,6 +222,8 @@ fun ArticleScreen(
                 is UiState.Article -> ArticleContent(
                     title = state.title,
                     sections = state.sections,
+                    image = state.image,
+                    thumbFile = thumbFile,
                     speakingState = speakingState,
                     activePosition = activePosition,
                     listState = listState,
@@ -513,6 +534,8 @@ private fun SuggestionRow(
 private fun ArticleContent(
     title: String,
     sections: List<ArticleSection>,
+    image: ArticleImage?,
+    thumbFile: File?,
     speakingState: SpeakingState,
     activePosition: ActivePosition?,
     listState: LazyListState,
@@ -569,6 +592,11 @@ private fun ArticleContent(
                     }
                 }
             )
+        }
+        if (image != null || thumbFile != null) {
+            item(key = "main-image") {
+                MainImageBlock(image, thumbFile)
+            }
         }
         sections.forEach { section ->
             section.heading?.let { heading ->
@@ -830,3 +858,47 @@ private fun PlayStopButton(
         )
     }
 }
+
+/**
+ * The article's canonical main image (ticket 33), shown right-aligned near the
+ * top of the article with its caption underneath. The bitmap is decoded off the
+ * main thread from the ViewModel's cached thumbnail file (which may still be
+ * downloading; the image simply appears once ready).
+ */
+@Composable
+private fun MainImageBlock(image: ArticleImage?, thumbFile: File?) {
+    val bitmap by produceState<ImageBitmap?>(initialValue = null, thumbFile) {
+        value = thumbFile?.let { file ->
+            withContext(Dispatchers.IO) {
+                runCatching { BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap() }
+                    .getOrNull()
+            }
+        }
+    }
+    val caption = image?.caption
+    if (bitmap == null && caption.isNullOrBlank()) return
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.End
+    ) {
+        bitmap?.let {
+            Image(
+                bitmap = it,
+                contentDescription = caption ?: "Article image",
+                modifier = Modifier
+                    .width(MainImageWidth)
+                    .clip(RoundedCornerShape(8.dp))
+            )
+        }
+        if (!caption.isNullOrBlank()) {
+            Text(
+                text = caption,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.width(MainImageWidth)
+            )
+        }
+    }
+}
+
+private val MainImageWidth = 140.dp

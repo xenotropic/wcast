@@ -53,7 +53,7 @@ class WikipediaRepository {
         if (exact != null) SearchResult.Exact(exact.title) else SearchResult.Suggestions(suggestions)
     }
 
-    suspend fun fetchArticle(title: String): List<ArticleSection> = withContext(Dispatchers.IO) {
+    suspend fun fetchArticle(title: String): FetchedArticle = withContext(Dispatchers.IO) {
         val document = Jsoup.connect(buildArticleUrl(title))
             .userAgent(USER_AGENT)
             .timeout(DEFAULT_TIMEOUT_MS)
@@ -62,9 +62,47 @@ class WikipediaRepository {
         val content = document.selectFirst(ARTICLE_CONTENT_SELECTOR)
             ?: throw IllegalStateException("Could not locate article content for \"${title.trim()}\".")
 
+        // Capture the canonical main image (and caption) before scrubbing removes
+        // the infobox / figure nodes that hold it (ticket 33).
+        val image = extractMainImage(content)
+
         scrubUnwantedNodes(content)
         scrubPronunciationNodes(content)
-        structureSections(content)
+        FetchedArticle(structureSections(content), image)
+    }
+
+    /**
+     * Finds the article's canonical "main image" (ticket 33). Preference order
+     * mirrors what readers expect as the lead illustration: the infobox image
+     * first (portraits / place infoboxes), then the first standalone thumb in the
+     * lead. Returns the low-resolution rendered thumbnail URL plus any caption.
+     */
+    private fun extractMainImage(content: Element): ArticleImage? {
+        val img = content.selectFirst(MAIN_IMAGE_SELECTORS)
+            ?: return null
+        val url = thumbnailUrl(img) ?: return null
+        return ArticleImage(url, imageCaption(img))
+    }
+
+    /** Resolves an `<img>`'s `src` to an absolute https thumbnail URL, or null. */
+    private fun thumbnailUrl(img: Element): String? {
+        val src = img.attr("src").takeIf { it.isNotBlank() } ?: return null
+        return when {
+            src.startsWith("//") -> "https:$src"
+            src.startsWith("http://") || src.startsWith("https://") -> src
+            else -> null
+        }
+    }
+
+    /** Extracts the caption text next to the main image, if present. */
+    private fun imageCaption(img: Element): String? {
+        val candidates = listOf(
+            img.closest(".infobox-image")?.selectFirst(".infobox-caption")?.text(),
+            img.closest("figure")?.selectFirst("figcaption")?.text(),
+            img.closest(".thumbinner")?.selectFirst(".thumbcaption")?.text(),
+            img.parent()?.selectFirst(".thumbcaption")?.text()
+        )
+        return candidates.firstOrNull { !it.isNullOrBlank() }?.trim()
     }
 
     private fun buildArticleUrl(title: String): String {
@@ -246,6 +284,14 @@ class WikipediaRepository {
             "span.IPA", ".IPA-comment", "span.phonemic", "span.phonetic",
             ".pronunciation-audio-switch"
         ).joinToString(", ")
+
+        /**
+         * Selectors for the article's canonical main image (ticket 33). Infobox
+         * images come first (the standard lead illustration), then standalone
+         * figures/thumbs in the lead. Checked before any scrubbing removes them.
+         */
+        private val MAIN_IMAGE_SELECTORS =
+            ".infobox img, figure img, .thumb img, .mw-file-description img"
 
         /**
          * Section identifiers that mark the start of an appendix (bottom matter)

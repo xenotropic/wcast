@@ -72,6 +72,7 @@ class SettingsActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val settings = SettingsStore(this)
         DebugLog.enabled = settings.debugLogsEnabled
+        OrientationLock.apply(this)
         val powerManager = getSystemService(PowerManager::class.java)
         setContent {
             var batteryOptimizationIgnored by remember {
@@ -112,7 +113,9 @@ class SettingsActivity : ComponentActivity() {
                         onViewDebugLogs = ::openDebugLogs,
                         onViewNormalizedText = ::openNormalizedText,
                         batteryOptimizationIgnored = batteryOptimizationIgnored,
-                        onOpenBatteryOptimization = ::requestBatteryOptimizationExemption
+                        onOpenBatteryOptimization = ::requestBatteryOptimizationExemption,
+                        initialPortraitLock = settings.portraitLock,
+                        onPortraitLockChange = { settings.portraitLock = it }
                     )
                 }
             }
@@ -230,13 +233,16 @@ private fun SettingsScreen(
     onViewDebugLogs: () -> Unit,
     onViewNormalizedText: () -> Unit,
     batteryOptimizationIgnored: Boolean,
-    onOpenBatteryOptimization: () -> Unit
+    onOpenBatteryOptimization: () -> Unit,
+    initialPortraitLock: Boolean,
+    onPortraitLockChange: (Boolean) -> Unit
 ) {
     var continuity by remember { mutableStateOf(initialContinuity) }
     var playerBarScale by remember { mutableStateOf(initialPlayerBarScale) }
     var progressiveChunking by remember { mutableStateOf(initialProgressiveChunking) }
     var debugLogsEnabled by remember { mutableStateOf(initialDebugLogsEnabled) }
     var bookmarkOnPlay by remember { mutableStateOf(initialBookmarkOnPlay) }
+    var portraitLock by remember { mutableStateOf(initialPortraitLock) }
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
@@ -341,6 +347,18 @@ private fun SettingsScreen(
                 onValueChange = { newValue ->
                     playerBarScale = newValue
                     onPlayerBarScaleChange(newValue)
+                }
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+            SettingsSection(title = "Display")
+            SettingsToggleRow(
+                title = "Lock to portrait",
+                subtitle = "Keep the app vertical (recommended). Rotating mid-read reflows the article view and loses the follow-along position; this prevents that.",
+                checked = portraitLock,
+                onCheckedChange = { newValue ->
+                    portraitLock = newValue
+                    onPortraitLockChange(newValue)
                 }
             )
 

@@ -1,0 +1,21 @@
+Rotating the screen seems to break the following of the text with the view. So I think number one, if there's a screen rotation event, then do the same thing as tapping the go to center button on the control panel that the view scrolls to what is currently playing, if something is currently playing. Secondly, add an option to settings that is enabled by default to lock the view to vertical. I think 90% of viewers would want to look at an app like this in vertical orientation all the time. the automatic rotation, I have that on my phone for many other apps, but with this one it breaks the view and it's just not the intent. So if that's checked then we want to have it so that this app locks itself in vertical orientation and will not rotate even if the screen view otherwise would. I think that's possible to override on a per app basis, but step one will be verifying that that's true.
+
+## Implementation (2026-10-24)
+
+1. **Re-centre on rotation.** The article screen now has a one-shot
+   `LaunchedEffect(listState)` that, when speech is actively playing, calls the
+   same `scrollToCurrentTop()` the "jump to current" control uses. Because a
+   rotation recreates the activity (resetting the LazyColumn scroll) while the
+   ViewModel keeps `activePosition`, this restores the follow-along view. It's a
+   no-op when nothing is playing / a new article is opened (speech is stopped
+   first).
+
+2. **Portrait lock (default on).** New setting "Display → Lock to portrait"
+   (default true). A per-activity override via `Activity.requestedOrientation`
+   is a supported way to lock one app to portrait even while the device's
+   auto-rotate is on — verified against the Android `ActivityInfo` API. Applied
+   through the new `OrientationLock` helper in every activity's `onCreate` (and
+   `onResume` in `MainActivity`) so the toggle takes effect immediately when
+   returning from Settings.
+
+Verified: `assembleDebug` + `testDebugUnitTest` pass; APK regenerated. 

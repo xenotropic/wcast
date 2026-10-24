@@ -1,12 +1,16 @@
 package cloud.morris.wcast
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import cloud.morris.wcast.data.ArticleImage
 import cloud.morris.wcast.data.ArticleSection
 import cloud.morris.wcast.data.BookmarkStore
+import cloud.morris.wcast.data.FetchedArticle
 import cloud.morris.wcast.data.SearchResult
 import cloud.morris.wcast.data.SearchSuggestion
+import cloud.morris.wcast.data.ThumbnailCache
 import cloud.morris.wcast.data.WikipediaRepository
 import cloud.morris.wcast.data.subtreeOf
 import cloud.morris.wcast.tts.SpeechController
@@ -17,6 +21,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.io.File
 
 /** Tag for in-app debug logging (Settings → Debug → "View debug logs"). */
 private const val TAG = "WcastVM"
@@ -26,7 +31,11 @@ sealed interface UiState {
     data object Idle : UiState
     data object Loading : UiState
     data class Suggestions(val query: String, val items: List<SearchSuggestion>) : UiState
-    data class Article(val title: String, val sections: List<ArticleSection>) : UiState
+    data class Article(
+        val title: String,
+        val sections: List<ArticleSection>,
+        val image: ArticleImage? = null
+    ) : UiState
     data class Error(val message: String) : UiState
 }
 
@@ -91,6 +100,8 @@ class MainViewModel : AndroidViewModel {
 
     private val bookmarkStore = BookmarkStore(getApplication<Application>())
 
+    private val thumbnails = ThumbnailCache(getApplication<Application>())
+
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
 
@@ -107,6 +118,10 @@ class MainViewModel : AndroidViewModel {
     /** Player-bar control size as a percentage (100 = default), from settings. */
     private val _playerBarScale = MutableStateFlow(settings.playerBarScale)
     val playerBarScale: StateFlow<Int> = _playerBarScale.asStateFlow()
+
+    /** Cached main-image file for the open article, or null while not downloaded. */
+    private val _thumbFile = MutableStateFlow<File?>(null)
+    val thumbFile: StateFlow<File?> = _thumbFile.asStateFlow()
 
     /** Whether the currently-open article is bookmarked (drives the search-box icon). */
     private val _bookmarked = MutableStateFlow(false)
@@ -301,6 +316,7 @@ class MainViewModel : AndroidViewModel {
     private fun onPlaybackStarted(title: String?) {
         DebugLog.d(TAG, "onPlaybackStarted title=$title serviceActive=${WcastMediaService.active != null}")
         bookmarkOnPlay(title)
+        val artworkUri = artworkUriForCurrentArticle()
         // On the *first* play (`active` is still null) start the service with the
         // play command in the intent, so the once-created service applies focus +
         // session state in onStartCommand and its onCreate bootstrap takes the
@@ -310,11 +326,20 @@ class MainViewModel : AndroidViewModel {
         // startForeground() and triggers ForegroundServiceDidNotStartInTimeException.
         val svc = WcastMediaService.active
         if (svc != null) {
-            svc.onPlaybackStarted(title)
+            svc.onPlaybackStarted(title, artworkUri)
         } else {
-            WcastMediaService.startService(getApplication(), title)
+            WcastMediaService.startService(getApplication(), title, artworkUri)
         }
         SpeechControllerBridge.updateState(active = true, playing = true)
+    }
+
+    /** The media-card artwork URI for the open article: cached file or remote URL. */
+    private fun artworkUriForCurrentArticle(): Uri? {
+        val state = _uiState.value as? UiState.Article ?: return null
+        val image = state.image ?: return null
+        val cached = _thumbFile.value
+        if (cached != null) return Uri.fromFile(cached)
+        return runCatching { Uri.parse(image.url) }.getOrNull()
     }
 
     /**
@@ -328,7 +353,7 @@ class MainViewModel : AndroidViewModel {
         val state = _uiState.value as? UiState.Article ?: return
         if (state.title != title) return
         if (!bookmarkStore.isBookmarked(title)) {
-            bookmarkStore.saveCopy(title, state.sections)
+            bookmarkStore.saveCopy(title, state.sections, state.image)
             _bookmarked.value = true
         }
     }
@@ -446,12 +471,12 @@ class MainViewModel : AndroidViewModel {
         // stored copy exists for this title.
         val stored = bookmarkStore.load(title)
         if (stored != null) {
-            presentArticle(stored.title, stored.sections)
+            presentArticle(stored.title, stored.sections, stored.image)
             _bookmarked.value = true
             maybeOfferResume(stored)
         } else {
-            val sections = repository.fetchArticle(title)
-            presentArticle(title, sections)
+            val fetched = repository.fetchArticle(title)
+            presentArticle(title, fetched.sections, fetched.image)
             _bookmarked.value = false
         }
     }
@@ -466,12 +491,12 @@ class MainViewModel : AndroidViewModel {
                 val stored = bookmarkStore.load(title)
                     ?: run {
                         // No longer stored (shouldn't happen from the list), fall back to fetch.
-                        val sections = repository.fetchArticle(title)
-                        presentArticle(title, sections)
+                        val fetched = repository.fetchArticle(title)
+                        presentArticle(title, fetched.sections, fetched.image)
                         _bookmarked.value = false
                         return@launch
                     }
-                presentArticle(stored.title, stored.sections)
+                presentArticle(stored.title, stored.sections, stored.image)
                 _bookmarked.value = true
                 maybeOfferResume(stored)
             } catch (e: Exception) {
@@ -481,9 +506,17 @@ class MainViewModel : AndroidViewModel {
     }
 
     /** Shows an article without resetting the scroll state. */
-    private fun presentArticle(title: String, sections: List<ArticleSection>) {
-        _uiState.value = UiState.Article(title, sections)
+    private fun presentArticle(title: String, sections: List<ArticleSection>, image: ArticleImage? = null) {
+        _uiState.value = UiState.Article(title, sections, image)
         _resumePrompt.value = null
+        _thumbFile.value = thumbnails.cached(title)
+        // Populate the cached thumbnail (used by the article view and media card)
+        // without delaying the article itself.
+        if (image != null && _thumbFile.value == null) {
+            viewModelScope.launch {
+                _thumbFile.value = thumbnails.ensure(title, image.url)
+            }
+        }
     }
 
     /** Offers "resume from saved location?" when a bookmarked article has a position. */
@@ -501,7 +534,7 @@ class MainViewModel : AndroidViewModel {
             bookmarkStore.delete(state.title)
             _bookmarked.value = false
         } else {
-            bookmarkStore.saveCopy(state.title, state.sections)
+            bookmarkStore.saveCopy(state.title, state.sections, state.image)
             // Capture the current play location (if any) at the moment of saving.
             val pos = _activePosition.value
             if (pos != null && (pos.sectionId != null || pos.paragraphIndex != null)) {

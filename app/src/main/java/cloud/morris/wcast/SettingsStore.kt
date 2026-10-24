@@ -72,6 +72,16 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_BOOKMARK_ON_PLAY, true)
         set(value) = prefs.edit().putBoolean(KEY_BOOKMARK_ON_PLAY, value).apply()
 
+    /**
+     * When true (default), the app locks itself to portrait orientation so a
+     * mid-read rotation can't reset the follow-along scroll position (ticket 27).
+     * Applied by [cloud.morris.wcast.OrientationLock] on each activity resume, so
+     * toggling it here takes effect as soon as you return to the main screen.
+     */
+    var portraitLock: Boolean
+        get() = prefs.getBoolean(KEY_PORTRAIT_LOCK, true)
+        set(value) = prefs.edit().putBoolean(KEY_PORTRAIT_LOCK, value).apply()
+
     private companion object {
         const val PREFS_NAME = "wcast_settings"
         const val KEY_CONTINUITY = "continuity"
@@ -80,5 +90,6 @@ class SettingsStore(context: Context) {
         const val KEY_DEBUG_LOGS_ENABLED = "debug_logs_enabled"
         const val KEY_PROGRESSIVE_CHUNKING = "progressive_chunking"
         const val KEY_BOOKMARK_ON_PLAY = "bookmark_on_play"
+        const val KEY_PORTRAIT_LOCK = "portrait_lock"
     }
 }

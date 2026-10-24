@@ -1,5 +1,6 @@
 package cloud.morris.wcast.tts
 
+import android.net.Uri
 import android.os.Looper
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -39,11 +40,13 @@ class TtsPlayer : SimpleBasePlayer(Looper.getMainLooper()) {
 
     private var status: Status = Status.IDLE
     private var title: String? = null
+    private var artworkUri: Uri? = null
 
-    /** Called when speech starts (or resumes), carrying the article title. */
-    fun onStarted(newTitle: String?) {
-        DebugLog.d(TAG, "onStarted newTitle=$newTitle prevStatus=$status")
+    /** Called when speech starts (or resumes), carrying the article title + artwork. */
+    fun onStarted(newTitle: String?, newArtworkUri: Uri?) {
+        DebugLog.d(TAG, "onStarted newTitle=$newTitle artwork=$newArtworkUri prevStatus=$status")
         if (newTitle != null) title = newTitle
+        if (newArtworkUri != null) artworkUri = newArtworkUri
         status = Status.PLAYING
         invalidateState()
     }
@@ -67,6 +70,7 @@ class TtsPlayer : SimpleBasePlayer(Looper.getMainLooper()) {
         DebugLog.d(TAG, "onFinished prevStatus=$status")
         status = Status.IDLE
         title = null
+        artworkUri = null
         invalidateState()
     }
 
@@ -145,6 +149,7 @@ class TtsPlayer : SimpleBasePlayer(Looper.getMainLooper()) {
                 MediaMetadata.Builder()
                     .setTitle(title ?: WCAST_FALLBACK_TITLE)
                     .setArtist(WCAST_DEFAULT_ARTIST)
+                    .setArtworkUri(artworkUri)
                     .build()
             )
             .build()

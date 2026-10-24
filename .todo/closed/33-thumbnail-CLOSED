@@ -1,0 +1,21 @@
+Add a thumbnail image to the top right, I think for each Wikipedia article there's like one canonical main image. So we want a fairly low resolution version of that. Include any caption that comes with it underneath like a normal caption. Then have that thumbnail image also be what displays in the media player.
+
+## Implementation (2026-10-24)
+
+- `WikipediaRepository` now extracts the canonical main image before DOM scrubbing
+  (infobox image first, then leading figure/thumb) via `.infobox img, figure img,
+  .thumb img, .mw-file-description img`. The low-res rendered `<img src>` is
+  resolved to an absolute https URL, and the caption comes from
+  `.infobox-caption` / `figcaption` / `.thumbcaption`. Returns
+  `FetchedArticle(sections, image)`.
+- `ArticleImage(url, caption)` model added; `UiState.Article` carries `image`.
+- New `ThumbnailCache` downloads the thumb (~tens of KB) to
+  `filesDir/thumbnails/<titleHash>.img`; the ViewModel exposes `thumbFile`.
+- `ArticleScreen` shows the image right-aligned under the title with its caption
+  beneath (decoded off the main thread, appears once downloaded).
+- Media player artwork: `TtsPlayer` sets `MediaMetadata.artworkUri`, fed through
+  `WcastMediaService.startService/onPlaybackStarted` with a local file URI (or
+  remote URL fallback).
+- Bookmark codec/store persist the image (url + caption) so offline articles keep
+  their thumbnail reference; round-trip covered by a new unit test.
+- Verified: `assembleDebug` + `testDebugUnitTest` pass; APK regenerated. 
