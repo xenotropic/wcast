@@ -1,0 +1,51 @@
+# Privacy Policy
+
+Wcast is an open-source Android app that reads Wikipedia articles aloud using the
+text-to-speech service already installed on your device.
+
+## What we collect
+
+Wcast does not collect, store, or transmit any personal information. There is no
+account, no registration, and no user profile.
+
+## What is sent over the network
+
+To fetch article content, Wcast sends requests to Wikipedia and the Wikimedia
+Foundation. A request includes the search terms you type and the titles of the
+articles you open, so Wikipedia can return the matching content and its thumbnail
+images. These are the only network requests the app makes, and they are made
+directly from your device to Wikipedia's servers.
+
+## Text-to-speech
+
+Reading aloud is handled by the Android text-to-speech engine you have selected
+in your device's system settings. That engine may run on your device or, if it is
+a cloud-based engine, send the text it reads to its own service. How your speech
+engine handles text is governed by that engine's own privacy policy, not by
+Wcast. Wcast does not send your text anywhere itself.
+
+## What is stored on your device
+
+Everything else stays on your device, in the app's own private storage:
+bookmarked articles and your saved reading position, cached article text and
+thumbnails, and your settings. None of this is uploaded.
+
+## Advertising and analytics
+
+Wcast contains no advertising, no analytics, and no crash reporting. No
+information about how you use the app is sent to the developers or anyone else.
+
+## Permissions
+
+Wcast requests only what it needs to read articles aloud:
+
+- Internet access, to fetch articles and thumbnails from Wikipedia.
+- Notification access, to show playback controls while an article reads.
+
+No microphone, camera, location, contact, or storage permissions are requested,
+and no audio is recorded.
+
+## Contact
+
+Wcast is maintained in the open at https://github.com/xenotropic/wcast. Questions
+about this policy can be raised there.
