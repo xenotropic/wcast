@@ -23,4 +23,7 @@ background:
 
 Open question still to verify on-device: whether an OEM "aggressive" battery
 saver can still sweep a foreground+paused media session even with the exemption;
-the battery-optimization row is the user-facing lever for that. 
+the battery-optimization row is the user-facing lever for that.
+
+==Closed in v0.9 (2026-10-24)==
+Shipped in the v0.9 release. 

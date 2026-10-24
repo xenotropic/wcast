@@ -128,15 +128,33 @@ When adding debug statements, follow these rules:
 
 ## Releasing (a quick reference for when instructed)
 
-To cut a release, push a `v*` tag — e.g.:
+To cut a release, push an annotated `v*` tag. **Release tags must carry a
+human-readable summary of what changed** — the GitHub release list and changelog
+render the tag message, so a bare "bump for version 0.x" is not acceptable.
+Before tagging:
 
-```bash
-git tag v0.1
-git push origin v0.1
-```
+1. Bump `app/build.gradle.kts`'s default `versionName` to the new version so
+   local dev builds and the in-app About screen stay in sync with the release.
+2. Review `git log <previous-tag>..HEAD` and summarise the *user-facing*
+   features and bug fixes in this release, with ticket numbers where they exist.
+3. Create an annotated tag whose message is that summary, e.g.:
+
+   ```bash
+   git tag -a v0.9 -m "Wcast v0.9
+
+   Features:
+   - Article thumbnails with captions, also used as media-player artwork (#33)
+   - Lock-to-portrait setting and re-centre reading position after rotation (#27)
+
+   Bug fixes:
+   - Player-bar play button starts the whole article on a fresh article (#31)"
+   git push origin v0.9
+   ```
 
 This triggers the release workflow, which builds the debug APK and creates a
-GitHub Release attached to the tag. Only do this when explicitly instructed.
+GitHub Release attached to the tag (CI overrides `versionName` from the pushed
+tag via `-PversionName=<tag without the leading "v">`). Only cut a release when
+explicitly instructed.
 
 ## Miscellaneous
 

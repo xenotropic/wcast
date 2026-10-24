@@ -17,10 +17,10 @@ android {
         minSdk = 26
         targetSdk = 34
         versionCode = 1
-        // Defaults to 0.8 for local/pre-release builds. CI overrides this with
-        // the pushed tag (e.g. `-PversionName=0.8`) so releases are labelled
+        // Defaults to 0.9 for local/pre-release builds. CI overrides this with
+        // the pushed tag (e.g. `-PversionName=0.9`) so releases are labelled
         // correctly. See AGENTS.md for the project's versioning conventions.
-        versionName = (project.findProperty("versionName") as? String) ?: "0.8"
+        versionName = (project.findProperty("versionName") as? String) ?: "0.9"
 
         // Timestamp of this build (ISO-8601, America/Los_Angeles i.e. Pacific
         // time), shown on the in-app About screen so a user's report can be

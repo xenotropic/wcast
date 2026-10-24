@@ -5,10 +5,8 @@ Next open ticket number: 37
 ## Open
 
 36 Double play from bookmarks. (Cline Difficulty Rating: 3)
-31 at-init-play-bar-play-plays-all (Cline Difficulty Rating: 2)
 29 playback bug (Cline Difficulty Rating: 7)
 28 Units select (Cline Difficulty Rating: 5)
-26 battery-optimization (Cline Difficulty Rating: 5)
 21 prerender (Cline Difficulty Rating: 6)
 19 normalization-improvement-as-AI-process (Cline Difficulty Rating: 4)
 14 foreign-word-finding-IPA-lookup (Cline Difficulty Rating: 6)
@@ -19,8 +17,10 @@ Next open ticket number: 37
 34 See Normalized text
 33 thumbnail
 32 data-transfer-abbrev
+31 at-init-play-bar-play-plays-all
 30 chunking-option
 27 lock-vertical
+26 battery-optimization
 25 todo-meta
 24 debug-logs
 23 exoplayer
