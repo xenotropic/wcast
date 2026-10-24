@@ -1,0 +1,15 @@
+Looking at the pictures as they appear inline,  I want to remove the caption. The picure should be an illustration of the thing you're already reading the article about, so its duplicative, and also it's not being read, which is not consistent with how the rest of the app behaves. And then I would like the initial paragraph(s) to flow around it. Right now it goes picture and then after the bottom of the picture the text begins, takes up too much vertical space, leaves whitespace to the left. 
+
+## Implementation (2026-10-24)
+
+- Removed the caption text entirely from the article view (`MainImageBlock` deleted);
+  the thumbnail is now a captionless illustration.
+- The main image is no longer a standalone full-width list item. Instead it is
+  floated top-right beside the lead (first) paragraph, which wraps around it:
+  the lead paragraph is split at the first line that would sit below the image,
+  the part above is laid out in the narrowed left column, and the rest flows
+  full-width beneath the image (ticket 38 `FloatedImageParagraph`).
+- The media-player artwork is unchanged (still driven by the same thumbnail
+  URL/cache); only the inline article display changed.
+- No data-model changes: `ArticleImage.caption` is retained for bookmark
+  round-tripping and any future use, it is simply no longer rendered. 
