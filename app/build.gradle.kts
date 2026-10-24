@@ -16,11 +16,12 @@ android {
         applicationId = "cloud.morris.wcast"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        // Defaults to 0.11 for local/pre-release builds. CI overrides this with
-        // the pushed tag (e.g. `-PversionName=0.11`) so releases are labelled
-        // correctly. See AGENTS.md for the project's versioning conventions.
-        versionName = (project.findProperty("versionName") as? String) ?: "0.11"
+        // Incremented with every release tag (Google Play requires it to go up).
+        versionCode = 2
+        // Defaults to 1.0 (the first Google Play release) for local builds. CI
+        // overrides this with the pushed tag (e.g. `-PversionName=1.0`) so releases
+        // are labelled correctly. See AGENTS.md for the project's versioning conventions.
+        versionName = (project.findProperty("versionName") as? String) ?: "1.0"
 
         // Timestamp of this build (ISO-8601, America/Los_Angeles i.e. Pacific
         // time), shown on the in-app About screen so a user's report can be

@@ -113,11 +113,13 @@ When adding debug statements, follow these rules:
 
 - Pre-Google-Play releases use semantic versions starting at `0.1`
   (e.g. `0.1`, `0.2`, `0.3`, ...). These are debug APKs built from `v*` tags.
-- **`1.0` is reserved** for the first release published on Google Play.
-  Do not use `1.0` (or higher) until then.
-- `app/build.gradle.kts` defaults `versionName` to `0.5`. CI overrides it from
+- **`1.0` is the first Google Play release.**
+- `app/build.gradle.kts` defaults `versionName` to `1.0`. CI overrides it from
   the pushed tag (`-PversionName=<tag without the leading "v">`).
-- `versionCode` is currently hardcoded to `1`.
+- **Every release tag requires a `versionCode` increment first.** Google Play
+  rejects uploads whose `versionCode` isn't higher than the last uploaded
+  artifact, so bump `versionCode` in `app/build.gradle.kts` before cutting any
+  `v*` tag. (It currently sits at `2`.)
 - **Keep the build identity in sync (IMPORTANT).** The in-app About screen
   (`SettingsActivity`) shows both a version tag and a build timestamp
   (generated as `BuildConfig.BUILD_TIME_PT`, in `America/Los_Angeles` time).
@@ -133,8 +135,10 @@ human-readable summary of what changed** — the GitHub release list and changel
 render the tag message, so a bare "bump for version 0.x" is not acceptable.
 Before tagging:
 
-1. Bump `app/build.gradle.kts`'s default `versionName` to the new version so
-   local dev builds and the in-app About screen stay in sync with the release.
+1. Bump `app/build.gradle.kts`'s default `versionName` to the new version and
+   **increment `versionCode`** (a hard requirement — Google Play rejects a
+   lower/equal `versionCode`), so local dev builds and the in-app About screen
+   stay in sync with the release.
 2. Review `git log <previous-tag>..HEAD` and summarise the *user-facing*
    features and bug fixes in this release, with ticket numbers where they exist.
 3. Create an annotated tag whose message is that summary, e.g.:
