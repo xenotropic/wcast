@@ -12,4 +12,22 @@ Looking at the pictures as they appear inline,  I want to remove the caption. Th
 - The media-player artwork is unchanged (still driven by the same thumbnail
   URL/cache); only the inline article display changed.
 - No data-model changes: `ArticleImage.caption` is retained for bookmark
-  round-tripping and any future use, it is simply no longer rendered. 
+  round-tripping and any future use, it is simply no longer rendered.
+
+## Crash fix (2026-10-24) — runtime crash on article render
+
+Opening an article crashed with `IllegalStateException: Asking for intrinsic
+measurements of SubcomposeLayout layouts is not supported`. Root cause:
+`FloatedImageParagraph` used `BoxWithConstraints` (a SubcomposeLayout) as its
+root, and it sits inside a `SelectionContainer` whose `SimpleLayout` measure
+policy — reached from `ArticleRow`'s `height(IntrinsicSize.Min)` gutter — asks
+its child for intrinsic height. SubcomposeLayout cannot answer that, so the
+render threw every time.
+
+Fix: replaced `BoxWithConstraints` with a plain `Box` whose available width is
+captured via `Modifier.onSizeChanged` (a state value, 0 on the first pass). The
+first pass renders the paragraph full-width so content shows immediately, then
+recomposes into the floated side-text + image layout once the width is known.
+This removes the SubcomposeLayout from the intrinsic-measured subtree while
+keeping the wrap-around behavior identical. Validated with `assembleDebug`,
+`testDebugUnitTest`, and a fresh APK (`BUILD_TIME_PT` updated). 
