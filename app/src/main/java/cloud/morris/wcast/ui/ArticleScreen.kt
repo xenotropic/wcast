@@ -993,4 +993,4 @@ private fun PlayStopButton(
 }
 
 /** Fraction of the column width the floated lead image occupies (ticket 38). */
-private const val IMAGE_WIDTH_FRACTION = 0.4f
+private const val IMAGE_WIDTH_FRACTION = 0.44f
