@@ -8,7 +8,7 @@
       <p>Made with Kotlin and Jetpack Compose. Coding by DeepSeek V4 Pro0813, with additional advice and planning from Gemini. The text normalization rules are based upon my experiments a few years ago in <a href="https://github.com/xenotropic/wiki-tts">wiki-tts</a>.</p>
     </td>
     <td valign="top" width="280" style="border: none;">
-      <img src="https://github.com/user-attachments/assets/8997203b-4ea2-479d-a19a-abc60b89ae6f" width="260" alt="Wcast Screenshot" />
+      <img src="https://raw.githubusercontent.com/xenotropic/wcast/refs/heads/main/fastlane/metadata/android/en-US/images/phoneScreenshots/1-wcast.png" width="260" alt="Wcast Screenshot" />
     </td>
   </tr>
 </table>
