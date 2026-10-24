@@ -7,7 +7,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
@@ -69,6 +68,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.buildAnnotatedString
@@ -900,60 +900,78 @@ private fun FloatedImageParagraph(
     val density = LocalDensity.current
     val style = MaterialTheme.typography.bodyLarge
 
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val fullWidthPx = constraints.maxWidth
-        val imageWidthPx = (MainImageWidth.value * density.density).roundToInt()
-        val gapPx = (8f * density.density).roundToInt()
-        val narrowWidthPx = (fullWidthPx - imageWidthPx - gapPx).coerceAtLeast(1)
-        val imageHeightPx =
-            (imageWidthPx * bitmap.height.toFloat() / bitmap.width.toFloat()).roundToInt()
+    // The available width is captured after the first layout pass rather than
+    // read from BoxWithConstraints, because BoxWithConstraints is a
+    // SubcomposeLayout that cannot provide intrinsic measurements — and this
+    // composable sits inside SelectionContainer, which is measured with
+    // intrinsics from ArticleRow's IntrinsicSize.Min gutter (crash #38).
+    var fullWidthPx by remember { mutableStateOf(0) }
 
-        // Measure the paragraph at the narrowed width to find how much text fits
-        // in the column beside the image.
-        val sideLayout = remember(annotated, narrowWidthPx, style) {
-            measurer.measure(
-                text = annotated,
-                style = style,
-                constraints = Constraints(maxWidth = narrowWidthPx)
-            )
-        }
-        var split = 0
-        for (i in 0 until sideLayout.lineCount) {
-            if (sideLayout.getLineBottom(i) <= imageHeightPx) {
-                split = sideLayout.getLineEnd(i, visibleEnd = true)
-            } else {
-                break
-            }
-        }
-        val sideText = if (split in 1 until annotated.length) {
-            annotated.subSequence(0, split)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .onSizeChanged { fullWidthPx = it.width }
+    ) {
+        if (fullWidthPx <= 0) {
+            // First pass: render the paragraph full width so content appears
+            // immediately; once the width is known this recomposes with the
+            // floated layout.
+            AnnotatedParagraphText(annotated, onLinkClick)
+            Spacer(modifier = Modifier.height(8.dp))
         } else {
-            null
-        }
-        val belowText = if (split in 1 until annotated.length) {
-            annotated.subSequence(split, annotated.length)
-        } else {
-            annotated
-        }
+            val imageWidthPx = (MainImageWidth.value * density.density).roundToInt()
+            val gapPx = (8f * density.density).roundToInt()
+            val narrowWidthPx = (fullWidthPx - imageWidthPx - gapPx).coerceAtLeast(1)
+            val imageHeightPx =
+                (imageWidthPx * bitmap.height.toFloat() / bitmap.width.toFloat()).roundToInt()
 
-        Column {
-            Row(verticalAlignment = Alignment.Top) {
-                if (sideText != null) {
-                    Column(modifier = Modifier.width(Dp(narrowWidthPx / density.density))) {
-                        AnnotatedParagraphText(sideText, onLinkClick)
-                    }
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Image(
-                    bitmap = bitmap,
-                    contentDescription = "Article image",
-                    modifier = Modifier
-                        .width(MainImageWidth)
-                        .clip(RoundedCornerShape(8.dp))
+            // Measure the paragraph at the narrowed width to find how much text
+            // fits in the column beside the image.
+            val sideLayout = remember(annotated, narrowWidthPx, style) {
+                measurer.measure(
+                    text = annotated,
+                    style = style,
+                    constraints = Constraints(maxWidth = narrowWidthPx)
                 )
             }
-            AnnotatedParagraphText(belowText, onLinkClick)
-            Spacer(modifier = Modifier.height(8.dp))
+            var split = 0
+            for (i in 0 until sideLayout.lineCount) {
+                if (sideLayout.getLineBottom(i) <= imageHeightPx) {
+                    split = sideLayout.getLineEnd(i, visibleEnd = true)
+                } else {
+                    break
+                }
+            }
+            val sideText = if (split in 1 until annotated.length) {
+                annotated.subSequence(0, split)
+            } else {
+                null
+            }
+            val belowText = if (split in 1 until annotated.length) {
+                annotated.subSequence(split, annotated.length)
+            } else {
+                annotated
+            }
+
+            Column {
+                Row(verticalAlignment = Alignment.Top) {
+                    if (sideText != null) {
+                        Column(modifier = Modifier.width(Dp(narrowWidthPx / density.density))) {
+                            AnnotatedParagraphText(sideText, onLinkClick)
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Image(
+                        bitmap = bitmap,
+                        contentDescription = "Article image",
+                        modifier = Modifier
+                            .width(MainImageWidth)
+                            .clip(RoundedCornerShape(8.dp))
+                    )
+                }
+                AnnotatedParagraphText(belowText, onLinkClick)
+                Spacer(modifier = Modifier.height(8.dp))
+            }
         }
     }
 }
