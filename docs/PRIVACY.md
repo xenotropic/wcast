@@ -1,12 +1,13 @@
 # Privacy Policy
 
 Wcast is an open-source Android app that reads Wikipedia articles aloud using the
-text-to-speech service already installed on your device.
+text-to-speech service already installed on your device. It was written by one person, Joe Morris, with assistance from LLMs.
 
-## What we collect
+## What I collect
 
-Wcast does not collect, store, or transmit any personal information. There is no
-account, no registration, and no user profile.
+The app does not collect, store, or transmit any personal information. There is no
+account, no registration, and no user profile. It will save an in-app history of articles you have played, as "bookmarks" but
+this can be turned off in settings. 
 
 ## What is sent over the network
 
@@ -20,7 +21,7 @@ directly from your device to Wikipedia's servers.
 
 Reading aloud is handled by the Android text-to-speech engine you have selected
 in your device's system settings. That engine may run on your device or, if it is
-a cloud-based engine, send the text it reads to its own service. How your speech
+a cloud-based engine, send the text it reads to that cloud service engine. How your speech
 engine handles text is governed by that engine's own privacy policy, not by
 Wcast. Wcast does not send your text anywhere itself.
 
@@ -47,5 +48,4 @@ and no audio is recorded.
 
 ## Contact
 
-Wcast is maintained in the open at https://github.com/xenotropic/wcast. Questions
-about this policy can be raised there.
+Wcast is maintained at https://github.com/xenotropic/wcast. You can raise issues about privacy issues as an issue on GitHub, or you can email me at joe at morris dot cloud
