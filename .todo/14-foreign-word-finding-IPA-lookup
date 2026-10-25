@@ -175,3 +175,109 @@ architecture. Still research — no code written.
 Open items still needing your call (unchanged from before, minus the resolved
 size question): confirm the pronunciation-*respelling* direction; and say the word
 on acceptable bundled-wordlist size (~1–3 MB) for offline stage-1 detection.
+==reply==
+So this one I sort of forked off into a different project (https://github.com/xenotropic/edgepron) decided to try to make it as a Python utility so that it can be reused by others to create a SQLite database to look up strings into pronunciations. Then the sqlite database gets used in this app. Perhaps it gets constructed from TSV when this app is built, for F-Droid purposes (dislike of blobs as I understand it), but for now let's just work from the database itself. I'm working in that other project to make it as high quality as possible. Right now there's still things that are in there that should be culled. And I still have to do a lot of testing in order to figure out what Pocket TTS, which is really the target here. Or the primary target anyway; it can't read IPA. Can you take a look at resources/output-v4-p500-oct24-817pm-wiktionary.db (sqlite database) And just evaluate what a plan would look like in order to incorporate it here and just general thoughts on using that as part of the normalization process. It seems fairly straightforward, the only thing being, I guess, that you have to figure out a process for matching the entries, the end database will be larger (and higher quality). This is just an example database. Can you think about integrating such a database into the normalization process here? Feel free to write scratch scripts or even pull down the EdgePron database into the resources directory here, which is gitignored. You can also suggest things for EdgePron, but that's a different workspace, different project. So don't go too deep off of that cliff. Your main focus here is on integrating such a database into this app.
+
+==Status Report: 2026-10-25 04:33 UTC== (research / plan — no changes to `app/` sources)
+
+Evaluated `resources/output-v4-p500-oct24-817pm-wiktionary.db` and how it fits the
+normalization pipeline here. Big takeaway up front: **the EdgePron DB collapses
+the whole three-stage design into one offline lookup.** Stages 1 ("is this word
+non-English?") and 2 ("fetch IPA over the network") disappear — you no longer
+detect a foreign word and *then* fetch its pronunciation; you just try to look
+the token up in a bundled SQLite table and substitute the respelling on a hit.
+No API calls, no rate limits, no per-article normalization cache, no eager-vs-
+lazy batch questions. That removes most of the weight the earlier status reports
+spent on network/batching.
+
+What the DB actually contains (sample):
+- Table `pronunciations(word PRIMARY KEY, ipa, respell, ipa_derived,
+  respell_derived, respell_method, source, lang) WITHOUT ROWID` — 3,798 rows,
+  all `source=wiktionary`.
+- Every row has `ipa_derived=0` and `respell_derived=1`: **IPA is canonical
+  (from Wiktionary) and `respell` is always derived.** `respell` is therefore
+  the column this app should consume — never `ipa` (Pocket TTS can't read IPA).
+- `respell_method`: 3,643 `canonical`, 155 `heuristic`.
+- Keys are mostly mixed-case proper nouns (3,729) + 69 all-lowercase; 247
+  multi-word phrases ("Abu Dhabi", "Alexander the Great"); 7 apostrophe, 15
+  hyphen, 159 accented keys. Word length 2–32 chars. No empty `respell`/`ipa`.
+- `lang` skew is heavily English (2,754) then the languages that actually appear
+  inside en-Wikipedia prose (fr 151, it 88, de 73, la 61, es 60, cs 53, pt 51…).
+- Size: 278 KB for the 8-column research DB. A **two-column `word→respell` dump
+  is 69 KB (36 KB gzipped)** for the same rows (~18 B/row). That two-column
+  shape is what we should bundle, not the 8-column file.
+
+Plan to wire it in (dependency-free):
+1. **Bundle the minimal form.** EdgePron already emits a deployment shape —
+   `--sqlite-minimal` ("two-column word → phonetic SQLite, keys lowercased,
+   accents preserved; respell by default") and `--condensed` (word<TAB>respell).
+   Ship the minimal DB as an `assets/` file (assets get compressed in the APK).
+   For F-Droid no-blob purposes later, regenerate it at build time from the
+   condensed TSV via a Gradle task; defer that until needed.
+2. **Load with Android's built-in SQLite.** Copy asset → private file once, then
+   open read-only with `android.database.sqlite.SQLiteDatabase`. This is the
+   app's first SQLite, but the API ships with Android — **zero new dependencies**,
+   consistent with the minimal-dependency goal.
+3. **Matching (the part flagged as "figure out a process").** Canonicalize the
+   lookup token to the same form EdgePron uses for keys: **lower-case but keep
+   accents**, and match *before* wcast's stage-1 `transliterate` (otherwise
+   "Agnès" folds to "Agnes" and misses). Longest-match-first so "Abu Dhabi" wins
+   over "Abu", then single tokens; token boundary `[A-Za-zÀ-ÿ'’-]+` so hyphen/
+   apostrophe keys flow through. Exact accent-aware case-insensitive match only —
+   no stemming/fuzzy in v1.
+4. **Stage placement.** Add `applyPronunciation()` as **stage 0** in
+   `Normalizer.normalize()` (before `transliterate`). Pure string work + a point
+   lookup, so `SpeechController.start()`'s single-pass normalize stays untouched —
+   no pre-render pipeline, no change to enqueueing.
+
+The one real piece of remaining work (stage-3 "final formatting"): `respell` is
+*not* yet safe to hand to the engine verbatim. It encodes Wiktionary/Wikipedia
+respelling conventions:
+- stressed syllable CAPITALIZED ("PArihs", "vehuhSEYE");
+- optional sounds in parens ("LOOV(ruh)", "…(d)bahB(Y)OO duh");
+- respelling keys whose lowercased form is ambiguous ("SEYE" = /aɪ/, not "see-yeh").
+So wcast — or better EdgePron, so it helps everyone — needs one more transform:
+emit a **plain-English, lowercased, no-parens, no-stress-caps respelling** as the
+`phonetic` value in the minimal/condensed output. Recommend adding an EdgePron
+output mode for this (e.g. `--respell-plain`) and having the app consume that
+column verbatim. This is the key EdgePron-side ask before wiring in.
+
+Blind-substitution caveat (found while testing the scratch matcher): the DB also
+contains *ordinary* English words, not just foreigns — "to"→"toh", "King"→"kihng",
+"July"→"juuLEYE", "August"→"AW guhst", "Catholic"→"KAthuhlihk", "September"→
+"sehpTEHMbuh". Substituting every hit would rewrite everyday English too (mostly a
+no-op or slightly worse). So matching needs either (a) EdgePron culling common
+words — it already flags "still things in there that should be culled" — so the
+DB only carries truthy mispronunciations, and/or (b) a small common-English
+stop-list in wcast so the matcher skips words the engine already says fine. This
+is the modern replacement for the original stage-1 "is it dubious?" detection.
+
+Concrete coverage check (scratch `resources/demo_match.sh`, French Revolution
+lead, 319 tokens): sample hits France→"frahns", French→"frehnch", Louis→"LOO ee",
+Napoleon→"nuhPOH lee uhn", Paris→"PArihs", Maximilien→"mahk see mee lyan"; it
+*misses* Bastille, Robespierre, Varennes, Brumaire, Jacobins, Thermidorian,
+National Assembly, Committee of Public Safety, Reign of Terror, etc. As you said,
+this is only an example DB: the mechanism works end-to-end, the coverage just
+needs the larger production set.
+
+Difficulty / cost:
+- Matching + storage: easy — a small Kotlin unit + a data-load shim, unit-tested
+  the `NormalizationRules` way (feed an in-memory Map; no Android needed).
+- New dependencies: none.
+- APK size: DB-size bound, ~18 B/row condensed. Tens of thousands of entries ≈
+  well under 1 MB; set a cap (say ≤ 2–3 MB) and revisit only if EdgePron's
+  production set outgrows it.
+- Runtime: indexed point lookup is microseconds; a 300-token article is a few
+  thousand lookups at speech start — negligible next to synthesis. Open the DB
+  read-only once per process (or hydrate the minimal table into an in-memory Map
+  if kept small).
+
+Open items for you:
+1. Confirm the bundled artifact is the **minimal respell-only DB** (not the
+   8-column file), keys lowercased / accents preserved.
+2. Confirm the **"plain speakable respelling"** direction for the value EdgePron
+   should emit (caps-for-stress + parens stripped — my recommendation), and/or
+   culling common-English words on the EdgePron side.
+3. Acceptable bundled size ceiling for the pronunciation DB.
+4. On-disk read-only SQLite vs. hydrated in-memory Map for the matcher (I lean
+   on-disk SQLite: zero RAM, trivially fake-able in tests). 
