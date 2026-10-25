@@ -332,3 +332,36 @@ Fallback for a much bigger dictionary (decide later, not now): if SQLite ever be
 1. Confirm the **TSV file is the interface** for v1 — i.e. "no SQLite, no build-time compile step" is acceptable to you.
 2. Confirm EdgePron will emit keys **lowercased / accent-preserved** and values as the **plain respelling** (restating the contract from your #2; just locking the exact columns).
 3. Confirm the TSV sits in wcast as a **committed text asset** (my recommendation, since it's source and reviewable), vs. a gitignored file you regenerate into the tree yourself each release.
+==reply==
+I'm fine with all of those as far as they go, but I think I want to more fully understand the comparative values of why not SQLite like you're saying if SQLite ever becomes worth it why isn't it worth it right now? I think we you or some other LLM had recommended before was to just send it in (to F-droid) as a TSV for build purposes and repo purposes, but that it gets converted to SQLite, which is made part of the app at build time. To sacrifice architectural build awkwardness for F-droids licensing purposes, but I still want that app to be as small and fast as possible. So before we proceed, I just need to understand why we would not do the build time TSV to SQLite generator now.
+
+==Status Report: 2026-10-25 (re: "why not build-time TSV→SQLite now?")== — still planning, no `app/` code
+
+Short answer: you're right, and I'm revising my earlier "defer SQLite" call. Commit the TSV as F-Droid source, compile it to SQLite at build time, and ship the `.db`. That is the better default for this app's "small-ish APK / minimal RAM" goals. The "parse the TSV into an in-memory map" plan I floated only saves one trivial generator script, and you've already said that trivial duplication is fine.
+
+Why SQLite wins at your budget (the comparative numbers I left out last time):
+- **RAM:** SQLite serves point lookups through a B-tree index with a bounded page cache (a few MB), vs. a `HashMap<String,String>` that holds on the order of 20–25 MB resident for ~150k rows. And SQLite keeps that flat as the dictionary grows toward 500k+, where the map keeps climbing.
+- **Cold start:** opening a `.db` read-only is ~≤1 ms. Decompressing + splitting ~150k TSV lines + building the map is tens-to-hundreds of ms and allocates the whole map up front.
+- **APK size:** a wash at this scale. A generated `WITHOUT ROWID` two-column table is a little larger than `.tsv.gz` at tiny sizes (page overhead), but both are ≤ a few MB compressed inside the APK. Not a differentiator.
+- **Lookup latency:** SQLite O(log n) is ~18 index hops for 150k rows — imperceptible next to TTS synthesis, so the map's O(1) isn't a real advantage here.
+
+So "small and fast" points at SQLite; the only thing the TSV-at-runtime plan buys is avoiding the generator, which is not a good trade.
+
+**The build-time model (still just the design):**
+1. **Committed source = the TSV.** EdgePron's `--condensed` output, sorted, keys lowercased/accent-preserved. It stays tracked in git — text, reviewable, F-Droid source.
+2. **A small generator** (e.g. `scripts/gen_pronunciations_db.py`): TSV in → a `WITHOUT ROWID` table `pronunciations(word TEXT PRIMARY KEY, respell TEXT NOT NULL)` out, written in one transaction. Sorted input + fixed schema = reproducible bytes. (This is the minimal true shape — we drop `ipa`, `respell_method`, `source`, `lang`, and the two `*_derived` flags.)
+3. **A Gradle `Exec` task** runs it before asset merging so `assembleDebug` / `assembleRelease` regenerate `pronunciations.db` every build. The `.db` is a generated artifact → `.gitignore` it; only the TSV + generator are committed.
+4. **Runtime:** copy the `.db` to a private file on first run (or open read-only in place), `SQLiteDatabase.openDatabase(path, null, OPEN_READONLY)`, prepared `SELECT respell FROM pronunciations WHERE word = ?` on the lowercased/accent-preserved token (longest-first for multi-word phrases). This replaces the "hydrate an in-memory Map" step from before.
+
+**F-Droid:** this is exactly the compliant pattern — the repo holds source (TSV + generator), the binary `.db` is produced at build time, and the toolchain (`python3`, whose stdlib includes `sqlite3`) is Debian-packaged / 100% FLOSS. No prebuilt blob sits in the tree, so there's nothing for a reviewer to flag.
+
+**One decision still needed from you — which generator:**
+- **Python script** (my recommendation): a ~20-line mirror of the SQLite writer EdgePron already has; `python3` + its `sqlite3` stdlib are on your dev box and on F-Droid's build VM, so nothing extra is installed. Same stack as EdgePron itself.
+- **Kotlin/JVM Gradle task + a build-only `sqlite-jdbc` from Maven Central:** no Python in the build at all, but more code to maintain and one more Maven fetch during the build.
+
+**Where that leaves the earlier "open items":**
+1. The **TSV is still the interface between the projects**; SQLite just becomes the *generated* runtime form. So "no SQLite" is now "SQLite at build time."
+2. Keys **lowercased / accent-preserved**, values **plain respelling** — unchanged.
+3. **TSV committed, `.db` gitignored and regenerated** every build — now settled.
+
+Still planning — no `app/` source has been touched. Say the word on the generator (Python vs. JVM) and I'll plan the concrete Gradle wiring as the last step before "go."
