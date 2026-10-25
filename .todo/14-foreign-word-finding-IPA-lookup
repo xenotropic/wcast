@@ -281,3 +281,54 @@ Open items for you:
 3. Acceptable bundled size ceiling for the pronunciation DB.
 4. On-disk read-only SQLite vs. hydrated in-memory Map for the matcher (I lean
    on-disk SQLite: zero RAM, trivially fake-able in tests). 
+==reply==
+1 - yes oops thought that what I was giving you. lazy human did not read the sqlite
+2 - sure will do
+3 - 2-3mb seems fine, but I'm not sure if that's your problem? see 5
+4 - I would have no idea without researching, so I will defer to you
+5 - one thing I really want your architecture input on, though, before we hit go on any implementation in this codebase is: what is the transfer process look like? and the build process? I don't actually want to defer the F-droid issue because I just want to have one build process that works for F-Droid and brings this database into this app and project. Just trying to figure out what the best border patrol is between the two projects, the best interface. Should I like manually be creating a TSV outside of this project? that would be a text readable, I think, that survives F-Droid policies (right?), and then I can just like mess around with it until I'm happy with the particular dictionary size? and then there'd be some SQLite compilation script that you'd put in here (duplicative of edgepron, but seems trivial enough) that I guess then Gradle would do, even though that might be in like Python or something? I mean the edgepron can output a SQLite but then I don't really want its entire code base to be like part of this app's build process. I mean, I guess I would if I had to, but it seems unnecessarily complicated. Anyway, I think you get the picture if you can just architect what that interface between these two projects is.
+
+==Status Report: 2026-10-25== (architecture — EdgePron ↔ wcast interface; still planning, no `app/` code)
+
+Your numbered replies first, then the architecture you asked for (item 5).
+1. Minimal respell-only artifact — understood; the 8-column file you dropped was EdgePron's research form, so the handoff should use its two-column output. ✔
+2. Plain speakable respelling — on you (EdgePron); wcast consumes it verbatim (no caps-for-stress, no parens, no IPA). ✔
+3. 2–3 MB budget — fine; it becomes "our problem" only as RAM/APK math, covered below.
+4. Runtime store — I'm revising my earlier "on-disk SQLite" lean in light of item 5: I now recommend **no SQLite at all** — hydrate an in-memory map from a text asset. Details below.
+
+**5. The interface / build process.** Short version: the only thing that crosses the border between the two projects is **one plain-text TSV file.** No shared code, no EdgePron dependency in wcast's build, no binary blob, no build-time compilation. That is exactly the "one build process that works for F-Droid" you want, because the existing Gradle build is unchanged — the dictionary just becomes a fourth text asset.
+
+The contract (the file):
+```
+# edgepron-condensed v1  key=lowercase,accent-preserved  value=plain-respell  sorted-bytewise
+abelard<TAB>AB uhlahrd
+adelbert<TAB>AD uhl buhrt
+agnès<TAB>ahn-YES
+```
+- format: `key<TAB>value`, one entry per line, UTF-8, LF endings.
+- key = lowercased word/phrase with accents kept ("Agnès" -> "agnès"), so it matches before wcast's `transliterate` folds the diacritic away.
+- value = the plain speakable respelling from item 2.
+- EdgePron emits it **sorted + de-duplicated** (deterministic artifact; lets wcast optionally binary-search).
+- ship it gzip'd (`pronunciations.tsv.gz`); the app already reads text assets.
+- pin a version (the comment line or the filename, e.g. `pronunciations-v1.tsv.gz`) so the app can validate it.
+
+Border duties (who owns what):
+- **EdgePron** (dev-time tool, separate repo): emits the TSV. Its code never lands in wcast; you run it *before* pushing the file here.
+- **You** (iterative): generate, cull, and test the dictionary on the EdgePron side until size/quality are happy within the 2–3 MB budget.
+- **wcast**: receives the final TSV as a **committed source asset** at `app/src/main/assets/normalization/pronunciations.tsv.gz`, right next to `bulk_replace.csv` / `pronounced_acronyms.csv` / `regex_rules.txt`, and parses it with the same asset-loader pattern this repo already has (`NormalizationAssets` -> `NormalizationRules`). No build step, no subprocess.
+
+**Why not SQLite (and when to revisit).** Your F-Droid instinct is correct. A committed `.db` is a binary blob, and F-Droid's inclusion policy says the build must run off published source on a 100% FLOSS toolchain, with prebuilt binaries only tolerated from authorized/trusted origins — so a `.db` in the tree would be scanned/flagged as prebuilt. Plain text is *source*, not a blob, so a TSV is unambiguous. It also deletes the "duplicative SQLite compilation script" you were rightly wary of: it's one more asset + one more parser in code we already own, reusing an existing convention. And since nothing extra happens at build time, the F-Droid build is identical to today's.
+
+RAM math (your 2–3 MB budget): that's roughly ~110k–165k rows. Hydrated into a `HashMap<String,String>` it's on the order of 20–25 MB resident — fits Android's default heap, but it isn't free. If you'd rather keep it tighter, a packed sorted-offsets table can hold it at a few× the raw text size instead. I'd start with the plain map and only optimize if the dictionary grows past budget.
+
+Fallback for a much bigger dictionary (decide later, not now): if SQLite ever becomes worth it, do it as a **build-time** TSV→SQLite generator rather than a committed `.db`. Python3 + the `sqlite3` CLI are both Debian-packaged (so F-Droid-legal), or, more self-contained, a tiny Kotlin/JVM Gradle task + a build-only SQLite JDBC dependency from Maven Central. The `.db` stays a gitignored build artifact regenerated from the committed TSV each build. This is the "later" answer so we don't reopen the blob question every time.
+
+**Where it plugs in when you say "go"** (unchanged from before, now file-backed):
+- new asset `app/src/main/assets/normalization/pronunciations.tsv.gz`;
+- a framework-free parser (mirroring `NormalizationRules.parseCsv`) -> a `PronunciationDict` (`Map<String,String>`), unit-testable off-device;
+- a new `Normalizer` stage-0 `applyPronunciation()` doing the longest-first token/phrase substitution before `transliterate`. `SpeechController.normalize` stays untouched.
+
+**Open items back to you (just the interface, to close out planning):**
+1. Confirm the **TSV file is the interface** for v1 — i.e. "no SQLite, no build-time compile step" is acceptable to you.
+2. Confirm EdgePron will emit keys **lowercased / accent-preserved** and values as the **plain respelling** (restating the contract from your #2; just locking the exact columns).
+3. Confirm the TSV sits in wcast as a **committed text asset** (my recommendation, since it's source and reviewable), vs. a gitignored file you regenerate into the tree yourself each release.
