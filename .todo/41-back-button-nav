@@ -1,0 +1,1 @@
+Let's implement a back button behavior like a web browser. The app keeps a stack of articles that have been visited until it reaches the root one that the app was opened with. no forward history at this time. No UI changes, just use the system back button 
