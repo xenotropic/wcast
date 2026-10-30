@@ -1,3 +1,6 @@
+
+[![Google Play](https://img.shields.io/badge/Google_Play-414141?style=for-the-badge&logo=google-play&logoColor=white)](https://play.google.com/store/apps/details?id=morris.cloud.wcast) [![Download APK](https://img.shields.io/badge/Download-APK-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/xenotropic/wcast/releases/latest)
+
 <table border="0" style="border-collapse: collapse; border: none;">
   <tr style="border: none;">
     <td valign="top" style="border: none;">
@@ -12,8 +15,7 @@
     </td>
   </tr>
 </table>
-For now if you want to try it out please see the <a href="https://github.com/xenotropic/wcast/releases">releases tab</a> and sideload the latest release's apk. I have submitted to F-Droid and likely will submit to Play soon. 
-
+It's in the Google Play Store, but you may often get more up-to-date code with more bug fixes from just downloading the latest APK from releases to the right. I've submitted for F-Droid and will link when it's there.
 
 ## What it does
 
