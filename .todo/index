@@ -1,9 +1,15 @@
 # TODO index
 
-Next open ticket number: 39
+Next open ticket number: 46
 
 ## Open
 
+44 eval-remove-stop-button (Cline Difficulty Rating: 1)
+43 double-tap-para-start-not-working (Cline Difficulty Rating: 4)
+42 paragraph-skip (Cline Difficulty Rating: 4)
+41 back-button-nav (Cline Difficulty Rating: 3)
+40 other-languages (Cline Difficulty Rating: 5)
+39 various abbreviation fixes (Cline Difficulty Rating: 1)
 37 play-after-call-hangup (Cline Difficulty Rating: 3)
 36 Double play from bookmarks. (Cline Difficulty Rating: 3)
 29 playback bug (Cline Difficulty Rating: 7)
@@ -14,6 +20,7 @@ Next open ticket number: 39
 
 ## Closed
 
+45 para-sometimes-play-twice
 38 image-layout
 35 bookmark on play
 34 See Normalized text

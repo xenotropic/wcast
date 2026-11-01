@@ -1,3 +1,4 @@
+==Original Issue==
 Sometimes a paragraph will be thrown under the queue twice seemingly, maybe a second or two apart, so that you hear two voices that are playing the same paragraph, but offset by two seconds. It's quite distracting. No longer possible to listen to that paragraph. A log is attached from one of the times that it happened to me. There's no obvious trigger. I was just sitting with the screen open, listening to the entire bicycle article, and it happened like 70% of the way through. This could be related to 36. May look at the defense in depth that is recommended there. Perhaps that will defend against this.  Log follows 
 ===
 [WCAST_DEBUG] 2026-10-29 11:40:29.051 WcastTTS: stream start utterances=80 chunks=86 progressive=true
@@ -577,3 +578,50 @@ Sometimes a paragraph will be thrown under the queue twice seemingly, maybe a se
 [WCAST_DEBUG] 2026-10-29 12:03:49.651 WcastTTS: topUpLookAhead begin frontier=82 horizon=85 buffer=8
 [WCAST_DEBUG] 2026-10-29 12:03:49.652 WcastTTS: synth start index=82/86 textLen=200
 [WCAST_DEBUG] 2026-10-29 12:03:49.654 WcastTTS: synthesizeToFile index=82 result=0 renderMs=2 bytes=0
+
+==Status Report: 2026-11-01 12:26 PST (Saturday)==
+
+Implemented a fix and closing the ticket (re-open if the long-listening stress
+test still reproduces a doubled voice).
+
+Root cause
+----------
+Not the same as ticket 36 (duplicate SpeechController instances from a second
+MainActivity). This is a data race inside a single SpeechController: two callback
+sources mutate shared state with no synchronization — TextToSpeech progress
+callbacks (onSynthDone/onSynthError, on the TTS engine's thread) and MediaPlayer
+completion/error callbacks (onFileDone/onFileError -> advanceAfterUtterance).
+
+Smoking gun: log lines 557-564. Chunk 72 finishes -> advanceAfterUtterance calls
+releasePlayer() (player = null) then playFile(73), which blocks in
+MediaPlayer.prepare() BEFORE assigning `player = mp`. During that window
+onSynthDone(80) fires on the other thread, sees `player == null`, and starts a
+second MediaPlayer for the look-ahead chunk 80. Chunk 73 and chunk 80 play at
+once, the single `player` field is overwritten (orphaning a running player), and
+readyIndices/currentIndex get corrupted — heard as two overlapping voices.
+
+Fix
+---
+1. Serialized the whole state machine with @Synchronized (reentrant JVM monitor on
+   the controller instance) on every entry point: onInit, start, onSynthDone,
+   onSynthError, advanceAfterUtterance, pause, resume, skipSections, stop, shutdown,
+   reloadEngineIfChanged, reloadEngine. The private helpers (playFile,
+   topUpLookAhead, beginSynthesis, startQueue, enqueueFrom, resetPlayback, …) are only
+   reached from a @Synchronized method, so the entire transition path is serialized.
+2. Hardened the fragile `player == null` sentinel in onSynthDone to `index ==
+   currentIndex`: a completed look-ahead render is always index > currentIndex, so it
+   can no longer be mistaken for "nothing is playing, start it now".
+
+Files changed
+-------------
+- app/src/main/java/cloud/morris/wcast/tts/SpeechController.kt
+
+Build / validation
+------------------
+./gradlew assembleDebug succeeded. app-debug.apk regenerated (18,497,233 bytes,
+2026-11-01 12:21:19 UTC); BUILD_TIME_PT = 2026-11-01T12:21:11 PST.
+
+Not device-verified (needs ~70% of a long article with a full look-ahead buffer to
+trigger). Stress-test: play a long article end-to-end, then grep the debug log for
+two `play start index=…` lines with far-apart indices within ~100ms, or a `synth done
+… buffered=false` line appearing between `utterance ended` and the next `play start`.
