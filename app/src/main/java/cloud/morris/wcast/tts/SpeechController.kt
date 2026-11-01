@@ -178,6 +178,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
     /** Directory holding the rendered WAV files for the current stream. */
     private val synthDir: File = File(appContext.cacheDir, "synth")
 
+    @Synchronized
     override fun onInit(status: Int) {
         ready = status == TextToSpeech.SUCCESS
         Log.d(TAG, "onInit status=$status ready=$ready")
@@ -254,6 +255,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         }
     }
 
+    @Synchronized
     private fun start(utterances: List<Utterance>) {
         // Phase 3: normalize display text into spoken text before synthesizing.
         // The normalization is applied here so title, headings, and paragraphs
@@ -432,6 +434,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         }
     }
 
+    @Synchronized
     private fun onSynthDone(utteranceId: String?) {
         val (gen, index) = parseId(utteranceId) ?: return
         if (gen != generation) return
@@ -440,8 +443,12 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         synthIndex = null
         Log.d(TAG, "onSynthDone gen=$gen index=$index")
         DebugLog.d(TAG, "synth done index=$index renderMs=${SystemClock.elapsedRealtime() - synthStartedAtMs} buffered=${player != null} readyIndices=${readyIndices.size}")
-        if (player == null) {
-            // Nothing is audible yet, so this rendered chunk becomes the play head.
+        if (index == currentIndex) {
+            // This rendered chunk is the play head: nothing is audible for it yet,
+            // so start it now instead of buffering. Keyed off currentIndex rather
+            // than `player == null` (ticket 45): a completed look-ahead render is
+            // always index > currentIndex, and `player` is transiently null inside
+            // the release/prepare window of the previous chunk.
             playFile(gen, index)
         } else {
             // A look-ahead render finished while an earlier chunk is still
@@ -451,6 +458,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
         }
     }
 
+    @Synchronized
     private fun onSynthError(utteranceId: String?) {
         val (gen, index) = parseId(utteranceId) ?: return
         if (gen != generation) return
@@ -553,6 +561,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
     private fun onFileError(gen: Int, index: Int) = advanceAfterUtterance(gen, index)
 
     /** Moves the stream past chunk [index], or finishes the stream at the end. */
+    @Synchronized
     private fun advanceAfterUtterance(gen: Int, index: Int) {
         if (gen != generation) return
         releasePlayer()
@@ -659,6 +668,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
      * pause lands while the current chunk is still being synthesized, the
      * synthesis is cancelled and resume re-renders that chunk from its start.
      */
+    @Synchronized
     fun pause() {
         if (queue.isEmpty() || paused) return
         paused = true
@@ -672,6 +682,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
     }
 
     /** Resumes paused playback from the chunk that was current when paused. */
+    @Synchronized
     fun resume() {
         if (queue.isEmpty()) return
         Log.d(TAG, "resume (paused=$paused) at index=$currentIndex")
@@ -706,6 +717,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
      * of the previous one. The title (sectionId == null) is its own "section".
      * No-ops at either boundary.
      */
+    @Synchronized
     fun skipSections(delta: Int) {
         if (queue.isEmpty() || delta == 0) return
 
@@ -730,6 +742,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
     }
 
     /** Stops playback immediately and signals the stream as finished. */
+    @Synchronized
     fun stop() {
         Log.d(TAG, "stop (queue=${queue.size})")
         resetPlayback()
@@ -745,6 +758,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
     val isReady: Boolean get() = ready
 
     /** Releases the TTS engine and any in-flight playback. Call when the owner is destroyed. */
+    @Synchronized
     fun shutdown() {
         Log.d(TAG, "shutdown")
         resetPlayback()
@@ -760,6 +774,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
      * *within* the same engine are not reflected by this package check; those are
      * covered by the explicit [reloadEngine] button in Settings.
      */
+    @Synchronized
     fun reloadEngineIfChanged(): Boolean {
         val current = currentDefaultEnginePackage() ?: return false
         if (current == enginePackage) return false
@@ -767,6 +782,7 @@ class SpeechController(context: Context) : TextToSpeech.OnInitListener {
     }
 
     /** Force-rebuilds the [TextToSpeech] engine (used by the Settings reload button). */
+    @Synchronized
     fun reloadEngine(): Boolean = rebuildEngine()
 
     private fun rebuildEngine(): Boolean {
