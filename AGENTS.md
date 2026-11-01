@@ -111,15 +111,18 @@ When adding debug statements, follow these rules:
 
 ## Versioning
 
-- Pre-Google-Play releases use semantic versions starting at `0.1`
-  (e.g. `0.1`, `0.2`, `0.3`, ...). These are debug APKs built from `v*` tags.
-- **`1.0` is the first Google Play release.**
-- `app/build.gradle.kts` defaults `versionName` to `1.0`. CI overrides it from
-  the pushed tag (`-PversionName=<tag without the leading "v">`).
+- Pre-Google-Play releases used semantic versions `0.1`, `0.2`, `0.3`, ... (debug
+  APKs built from `v*` tags). `1.0` was the first Google Play release.
+- **Post-1.0 releases use the `x.0x` format**: a one-digit major, a `.0`, then
+  the release digit, incrementing `1.01`, `1.02`, `1.03`, ... (the last digit may
+  exceed `9`, e.g. `1.10`, `1.11`, once needed).
+- `app/build.gradle.kts` defaults `versionName` to the current `x.0x` version
+  (`1.01`). CI overrides it from the pushed tag
+  (`-PversionName=<tag without the leading "v">`).
 - **Every release tag requires a `versionCode` increment first.** Google Play
   rejects uploads whose `versionCode` isn't higher than the last uploaded
   artifact, so bump `versionCode` in `app/build.gradle.kts` before cutting any
-  `v*` tag. (It currently sits at `3`.)
+  `v*` tag. (It currently sits at `4`.)
 - **Keep the build identity in sync (IMPORTANT).** The in-app About screen
   (`SettingsActivity`) shows both a version tag and a build timestamp
   (generated as `BuildConfig.BUILD_TIME_PT`, in `America/Los_Angeles` time).
