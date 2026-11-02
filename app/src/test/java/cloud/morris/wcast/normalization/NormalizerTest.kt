@@ -244,13 +244,13 @@ class NormalizerTest {
         assertEquals("D N A", normalizer.normalize("DNA"))
     }
 
-    // ── Years (1100–1999 → two digit-groups) ────────────────────────────────
+    // ── Years (1100–2099 → two digit-groups) ────────────────────────────────
 
     @Test
     fun `reads years after lead-in words as two digit groups`() {
         assertEquals("in 18 46", normalizer.normalize("in 1846"))
         assertEquals("since 17 76", normalizer.normalize("since 1776"))
-        assertEquals("around 15 00", normalizer.normalize("around 1500"))
+        assertEquals("around 1500", normalizer.normalize("around 1500"))
         assertEquals("during 19 14", normalizer.normalize("during 1914"))
     }
 
@@ -266,9 +266,8 @@ class NormalizerTest {
         assertEquals("in 17 o 4", normalizer.normalize("in 1704"))
         assertEquals("in 14 o 2", normalizer.normalize("in 1402"))
         assertEquals("in 18 o 1", normalizer.normalize("in 1801"))
-        // 09 and plain 00 are left as ordinary groups.
+        // 09 is left as an ordinary group.
         assertEquals("in 18 09", normalizer.normalize("in 1809"))
-        assertEquals("in 17 00", normalizer.normalize("in 1700"))
     }
 
     @Test
@@ -298,9 +297,21 @@ class NormalizerTest {
 
     @Test
     fun `leaves years outside the rewrite range alone`() {
-        // 2000+ are read well by engines already ("twenty twenty"), and <1100
-        // are typically ordinary numbers.
-        assertEquals("in 2024", normalizer.normalize("in 2024"))
+        // Below 1100 are typically ordinary numbers; 2100+ are left to the engine.
         assertEquals("in 1066", normalizer.normalize("in 1066"))
+        assertEquals("in 2101", normalizer.normalize("in 2101"))
+    }
+
+    @Test
+    fun `reads century years whole`() {
+        assertEquals("in 1900", normalizer.normalize("in 1900"))
+        assertEquals("in 1800", normalizer.normalize("in 1800"))
+        assertEquals("in 2000", normalizer.normalize("in 2000"))
+    }
+
+    @Test
+    fun `splits modern years too`() {
+        assertEquals("in 20 23", normalizer.normalize("in 2023"))
+        assertEquals("November 20 24", normalizer.normalize("November 2024"))
     }
 }

@@ -40,7 +40,7 @@ import java.text.Normalizer
  *  3. regex rules        — ordered rules from `regex_rules.txt` (dash pauses,
  *                          number ranges, temperature).
  *  4. money              — "$4 billion" -> "four billion dollars".
- *  5. years              — "in 1846" -> "in 18 46" (1100–1999, contextual).
+ *  5. years              — "in 1846" -> "in 18 46" (1100–2099, not century years, contextual).
  *  6. roman numerals     — "Henry VIII" -> "Henry the eighth".
  *  7. units              — "5 km", "120 km/h", "80 mph" -> spoken unit words.
  *  8. fractions          — "3/4" -> "three quarters" (guarded against dates).
@@ -216,7 +216,7 @@ class Normalizer(private val rules: NormalizationRules) {
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * Years in 1100..1999 are read by TTS engines as cardinal numbers ("one
+     * Years in 1100..2099 are read by TTS engines as cardinal numbers ("one
      * thousand eight hundred forty six") rather than the conventional "eighteen
      * forty six" that a native speaker uses for a year. This stage rewrites such
      * four-digit tokens into two digit-groups, leaving a space so the engine
@@ -250,6 +250,9 @@ class Normalizer(private val rules: NormalizationRules) {
             val value = digits.toInt()
             if (value !in minYear..maxYear) return@replace m.value
 
+            // Century years read better whole: "1900", not "19 00" (ticket 45).
+            if (digits.endsWith("00")) return@replace m.value
+
             // Skip unambiguous non-year quantities: "1846 million", "1846 percent".
             val after = text.substring(m.range.last + 1)
             if (YEAR_NON_YEAR_SUFFIX.matchesAt(after, 0)) return@replace m.value
@@ -261,7 +264,7 @@ class Normalizer(private val rules: NormalizationRules) {
 
     /** Minimum/maximum year rewritten by [expandYears]. */
     private val minYear = 1100
-    private val maxYear = 1999
+    private val maxYear = 2099
 
     /**
      * Words that, immediately before a four-digit number, mark it as a year.
@@ -317,12 +320,13 @@ class Normalizer(private val rules: NormalizationRules) {
         return match.groupValues[1].lowercase()
     }
 
-    /** Rewrites "1846" -> "18 46" and "1704" -> "17 o 4". */
+    /** Rewrites "1846" -> "18 46" and "2023" -> "20 23"; "1704" -> "17 o 4". */
     private fun toYearPairs(digits: String): String {
         val first = digits.substring(0, 2)
         val second = digits.substring(2)
-        // "o" pronunciation applies to the 01..08 group ("17 o 4"), while 00
-        // ("1700") and 09 ("1809") are left as ordinary digit groups.
+        // "o" pronunciation applies to the 01..08 group ("17 o 4"); 09
+        // ("1809") is left as an ordinary digit group. Century years ("00") are
+        // never passed here (skipped in expandYears).
         val useO = second[0] == '0' && second[1] in '1'..'8'
         return if (useO) {
             "$first o ${second[1]}"
