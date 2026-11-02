@@ -14,3 +14,16 @@ Files changed: MainActivity.kt, SettingsActivity.kt, BookmarksActivity.kt,
 DebugLogActivity.kt, NormalizedTextActivity.kt.
 
 Built: ./gradlew assembleDebug succeeded; app-debug.apk regenerated, BUILD_TIME_PT refreshed.
+
+==reply==
+Realizing this isn't quite done: the very top status-bar strip (time, notifications,
+Bluetooth, battery) is now just white — the icons are gone. Moving the text box down is
+an improvement, but that strip should keep showing the system icons.
+
+==Status Report==
+Follow-up fix: enableEdgeToEdge() now forces light (dark-icon) system bars via
+SystemBarStyle.light(TRANSPARENT, TRANSPARENT) for both the status bar and navigation bar,
+in all five activities. The default SystemBarStyle.auto follows the SYSTEM dark-mode
+setting (the app is always light), so on a dark-mode phone it drew white icons on the
+white bar. Forcing `light` keeps the bars transparent + content inset, and always draws
+dark icons on the white background. ./gradlew assembleDebug succeeded.
