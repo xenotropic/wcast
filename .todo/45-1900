@@ -1,3 +1,0 @@
-There's currently an algorithm to split years so that they are read as pairs of two digits. This is what people usually do, but the year 1900 and probably other 100 based years are also split, but 19 00 is not usefully read, so those need to be not split. Just maybe take a little bit of thinking through of that and any other ones that maybe should not be split, because a TTS engine would be doing better with it not split than split. 
-
-It also seems like Pocket TTS does better with even modern dates split. So for everything where it does make sense, like 2023, let's put a space between the 20 and the 23 

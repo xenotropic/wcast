@@ -1,0 +1,16 @@
+==Original Issue==
+It seems like as of release 1.01, the screen now sometimes becomes so full screen that it overlays what would normally be the top level beginning of the drawer when my phone has like the time and the notification icons and then those become not selectable. Can we look into if there's a reason why that UI change would have happened or I guess no matter how it happened to make sure it doesn't happen? It seems to mostly happen when you first open the app, but then if you leave the view and come back it's okay, but then it's usually that way for the settings and views like looking at the Normalize text.
+
+==Status Report==
+Root cause (ticket 46): with a full-bleed theme and plain `Modifier.fillMaxSize()` on every
+screen, the app's content draws edge-to-edge — up under the status bar (and nav bar)
+whenever the system reports zero/no insets, typically on the *first* frame right after a
+cold start. That's why it appears on first open and mostly self-corrects after
+navigation. The fix: call `enableEdgeToEdge()` in every activity and add
+`systemBarsPadding()` so content always insets below the status/nav bars; the EULA surface
+in MainActivity also got `systemBarsPadding()` so it can't cover the status bar either.
+
+Files changed: MainActivity.kt, SettingsActivity.kt, BookmarksActivity.kt,
+DebugLogActivity.kt, NormalizedTextActivity.kt.
+
+Built: ./gradlew assembleDebug succeeded; app-debug.apk regenerated, BUILD_TIME_PT refreshed.
