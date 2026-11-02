@@ -17,11 +17,11 @@ android {
         minSdk = 26
         targetSdk = 36
         // Incremented with every release tag (Google Play requires it to go up).
-        versionCode = 4
-        // Defaults to the current x.0x version (e.g. 1.01) for local builds. CI
-        // overrides this with the pushed tag (e.g. `-PversionName=1.01`) so releases
+        versionCode = 5
+        // Defaults to the current x.0x version (e.g. 1.02) for local builds. CI
+        // overrides this with the pushed tag (e.g. `-PversionName=1.02`) so releases
         // are labelled correctly. See AGENTS.md for the project's versioning conventions.
-        versionName = (project.findProperty("versionName") as? String) ?: "1.01"
+        versionName = (project.findProperty("versionName") as? String) ?: "1.02"
 
         // Timestamp of this build (ISO-8601, America/Los_Angeles i.e. Pacific
         // time), shown on the in-app About screen so a user's report can be
