@@ -1,1 +1,5 @@
 This ticket arises from Pocket TTS saying 1920s wrong. It says 19 tweeze and I see that those are not being normalized. So I think at least break those apart in the same way that we otherwise are. So like detecting the S after a set of decades probably only would arise after 1400 I would guess so we don't need to normalize before then to avoid false positives. 
+
+This is also kind of a separate issue, but just still relates to decades. Here we have 2024 and 2025 in the same paragraph, but only one of them is getting split. The split is better for pronunciation. This is copied from in-app normalized texts in the settings. 
+
+"intervention in the 2024 election. Under his successor Prabowo Subianto, the government pursued a fiscally expansive programme and revised a military law in 20 25, which"
