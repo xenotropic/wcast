@@ -27,3 +27,6 @@ in all five activities. The default SystemBarStyle.auto follows the SYSTEM dark-
 setting (the app is always light), so on a dark-mode phone it drew white icons on the
 white bar. Forcing `light` keeps the bars transparent + content inset, and always draws
 dark icons on the white background. ./gradlew assembleDebug succeeded.
+
+==reply==
+This is resolved. 
