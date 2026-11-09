@@ -1,0 +1,1 @@
+This ticket arises from Pocket TTS saying 1920s wrong. It says 19 tweeze and I see that those are not being normalized. So I think at least break those apart in the same way that we otherwise are. So like detecting the S after a set of decades probably only would arise after 1400 I would guess so we don't need to normalize before then to avoid false positives. 
